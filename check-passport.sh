@@ -3,7 +3,7 @@
 # ---------------------------
 # Slack webhook URL
 # ---------------------------
-SLACK_WEBHOOK="https://hooks.slack.com/services/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"
+SLACK_WEBHOOK="hook"
 
 send_slack() {
   # $1 = message to send

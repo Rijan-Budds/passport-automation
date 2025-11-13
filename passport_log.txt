@@ -5,3 +5,10 @@
 ✅ Success! Got response:
 {"minDate":"2025-11-13","maxDate":"2025-11-13","offDates":["2025-11-13"],"weeklyOffDaysIndexes":[6]}
 ❌ NO SLOTS AVAILABLE - Date is marked as off
+🔍 Checking passport slot availability...
+==========================================
+
+⏳ Attempt 1 of 3...
+✅ Success! Got response:
+{"minDate":"2025-11-13","maxDate":"2025-11-13","offDates":["2025-11-13"],"weeklyOffDaysIndexes":[6]}
+❌ NO SLOTS AVAILABLE - Date is marked as off
