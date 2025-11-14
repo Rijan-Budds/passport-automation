@@ -1,0 +1,21 @@
+# Environment files
+.env
+.env.* 
+
+# Node / Python common
+node_modules/
+dist/
+build/
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+
+# Test / coverage
+.coverage
+.pytest_cache/
