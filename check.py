@@ -3,7 +3,7 @@ import json
 import time
 from datetime import datetime
 
-# SLACK_WEBHOOK = 
+SLACK_WEBHOOK = "https://hooks.slack.com/services/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"
 
 HEADERS = {
     "Accept": "application/json, text/plain, */*",

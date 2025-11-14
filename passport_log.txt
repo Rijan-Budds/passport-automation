@@ -381,3 +381,20 @@ Status Code: 200
   ]
 }
 ❌ NO SLOTS AVAILABLE - Date is marked as off
+🔍 Checking passport slot availability...
+==========================================
+
+⏳ Attempt 1 of 30 at 2025-11-14 19:39:01...
+Status Code: 200
+✅ Success! Got response:
+{
+  "minDate": "2025-11-14",
+  "maxDate": "2025-11-14",
+  "offDates": [
+    "2025-11-14"
+  ],
+  "weeklyOffDaysIndexes": [
+    6
+  ]
+}
+❌ NO SLOTS AVAILABLE - Date is marked as off
