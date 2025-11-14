@@ -2,8 +2,16 @@ import requests
 import json
 import time
 from datetime import datetime
+import os
+from dotenv import load_dotenv
 
-SLACK_WEBHOOK = "https://hooks.slack.com/services/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"
+# Load environment variables from .env if it exists
+load_dotenv()
+
+SLACK_WEBHOOK = os.environ.get("SLACK_WEBHOOK")
+
+if not SLACK_WEBHOOK:
+    raise ValueError("⚠️ SLACK_WEBHOOK environment variable not set!")
 
 HEADERS = {
     "Accept": "application/json, text/plain, */*",
@@ -38,7 +46,7 @@ def check_passport():
                 timeout=10,
             )
             text = response.text
-            print(f"Status Code: {response.status_code}") 
+            print(f"Status Code: {response.status_code}")
 
             # Waiting room detection
             if "Online Waiting Room" in text:
