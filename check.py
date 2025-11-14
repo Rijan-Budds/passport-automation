@@ -5,7 +5,6 @@ from datetime import datetime
 import os
 from dotenv import load_dotenv
 
-# Load environment variables from .env if it exists
 load_dotenv()
 
 SLACK_WEBHOOK = os.environ.get("SLACK_WEBHOOK")
