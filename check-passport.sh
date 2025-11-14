@@ -3,12 +3,14 @@
 # ---------------------------
 # Slack webhook URL
 # ---------------------------
-SLACK_WEBHOOK="hook"
+SLACK_WEBHOOK="https://hooks.slack.com/services/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"
 
 send_slack() {
   # $1 = message to send
+  local timestamp
+  timestamp=$(date '+%Y-%m-%d %H:%M:%S')
   curl -s -X POST -H 'Content-type: application/json' \
-    --data "{\"text\":\"$1\"}" \
+    --data "{\"text\":\"[$timestamp] $1\"}" \
     "$SLACK_WEBHOOK"
 }
 
@@ -16,8 +18,10 @@ echo "🔍 Checking passport slot availability..."
 echo "=========================================="
 echo ""
 
-for i in {1..3}; do
-    echo "⏳ Attempt $i of 3..."
+for i in {1..30}; do
+    local timestamp
+    timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    echo "⏳ Attempt $i of 30 at $timestamp..."
     
     response=$(curl -s --max-time 10 \
       'https://emrtds.nepalpassport.gov.np/iups-api/calendars/77/false' \
@@ -51,11 +55,12 @@ for i in {1..3}; do
 
     # Connection or other errors
     else
-        echo "❌ Connection failed. Retrying in 3 seconds..."
+        echo "❌ Connection failed at $timestamp. Retrying in 3 seconds..."
         sleep 3
     fi
 done
 
+timestamp=$(date '+%Y-%m-%d %H:%M:%S')
 echo ""
-echo "⛔ All attempts failed. Possible reasons: site down, high traffic, network issues"
+echo "⛔ All attempts failed at $timestamp. Possible reasons: site down, high traffic, network issues"
 send_slack "⛔ Passport check failed. Possible reasons: site down or high traffic."

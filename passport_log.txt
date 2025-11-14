@@ -1,14 +1,383 @@
 🔍 Checking passport slot availability...
 ==========================================
 
-⏳ Attempt 1 of 3...
+/home/rijan/passport/check-passport.sh: line 22: local: can only be used in a function
+⏳ Attempt 1 of 30 at 2025-11-14 12:21:01...
 ✅ Success! Got response:
-{"minDate":"2025-11-13","maxDate":"2025-11-13","offDates":["2025-11-13"],"weeklyOffDaysIndexes":[6]}
+{"minDate":"2025-11-14","maxDate":"2025-11-14","offDates":["2025-11-14"],"weeklyOffDaysIndexes":[6]}
 ❌ NO SLOTS AVAILABLE - Date is marked as off
 🔍 Checking passport slot availability...
 ==========================================
 
-⏳ Attempt 1 of 3...
+/home/rijan/passport/check-passport.sh: line 22: local: can only be used in a function
+⏳ Attempt 1 of 30 at 2025-11-14 12:24:01...
 ✅ Success! Got response:
-{"minDate":"2025-11-13","maxDate":"2025-11-13","offDates":["2025-11-13"],"weeklyOffDaysIndexes":[6]}
+{"minDate":"2025-11-14","maxDate":"2025-11-14","offDates":["2025-11-14"],"weeklyOffDaysIndexes":[6]}
+❌ NO SLOTS AVAILABLE - Date is marked as off
+🔍 Checking passport slot availability...
+==========================================
+
+/home/rijan/passport/check-passport.sh: line 22: local: can only be used in a function
+⏳ Attempt 1 of 30 at 2025-11-14 12:27:01...
+✅ Success! Got response:
+{"minDate":"2025-11-14","maxDate":"2025-11-14","offDates":["2025-11-14"],"weeklyOffDaysIndexes":[6]}
+❌ NO SLOTS AVAILABLE - Date is marked as off
+🔍 Checking passport slot availability...
+==========================================
+
+/home/rijan/passport/check-passport.sh: line 22: local: can only be used in a function
+⏳ Attempt 1 of 30 at 2025-11-14 12:30:01...
+✅ Success! Got response:
+{"minDate":"2025-11-14","maxDate":"2025-11-14","offDates":["2025-11-14"],"weeklyOffDaysIndexes":[6]}
+❌ NO SLOTS AVAILABLE - Date is marked as off
+🔍 Checking passport slot availability...
+==========================================
+
+/home/rijan/passport/check-passport.sh: line 22: local: can only be used in a function
+⏳ Attempt 1 of 30 at 2025-11-14 12:33:01...
+✅ Success! Got response:
+{"minDate":"2025-11-14","maxDate":"2025-11-14","offDates":["2025-11-14"],"weeklyOffDaysIndexes":[6]}
+❌ NO SLOTS AVAILABLE - Date is marked as off
+🔍 Checking passport slot availability...
+==========================================
+
+/home/rijan/passport/check-passport.sh: line 22: local: can only be used in a function
+⏳ Attempt 1 of 30 at 2025-11-14 12:36:01...
+✅ Success! Got response:
+{"minDate":"2025-11-14","maxDate":"2025-11-14","offDates":["2025-11-14"],"weeklyOffDaysIndexes":[6]}
+❌ NO SLOTS AVAILABLE - Date is marked as off
+🔍 Checking passport slot availability...
+==========================================
+
+/home/rijan/passport/check-passport.sh: line 22: local: can only be used in a function
+⏳ Attempt 1 of 30 at 2025-11-14 12:39:01...
+✅ Success! Got response:
+{"minDate":"2025-11-14","maxDate":"2025-11-14","offDates":[],"weeklyOffDaysIndexes":[6]}
+🎉 SLOTS ARE AVAILABLE!
+ok🔍 Checking passport slot availability...
+==========================================
+
+/home/rijan/passport/check-passport.sh: line 22: local: can only be used in a function
+⏳ Attempt 1 of 30 at 2025-11-14 12:42:01...
+❌ Connection failed at 2025-11-14 12:42:01. Retrying in 3 seconds...
+/home/rijan/passport/check-passport.sh: line 22: local: can only be used in a function
+⏳ Attempt 2 of 30 at 2025-11-14 12:42:14...
+✅ Success! Got response:
+{"minDate":"2025-11-14","maxDate":"2025-11-14","offDates":["2025-11-14"],"weeklyOffDaysIndexes":[6]}
+❌ NO SLOTS AVAILABLE - Date is marked as off
+🔍 Checking passport slot availability...
+==========================================
+
+/home/rijan/passport/check-passport.sh: line 22: local: can only be used in a function
+⏳ Attempt 1 of 30 at 2025-11-14 12:45:01...
+✅ Success! Got response:
+{"minDate":"2025-11-14","maxDate":"2025-11-14","offDates":["2025-11-14"],"weeklyOffDaysIndexes":[6]}
+❌ NO SLOTS AVAILABLE - Date is marked as off
+🔍 Checking passport slot availability...
+==========================================
+
+/home/rijan/passport/check-passport.sh: line 22: local: can only be used in a function
+⏳ Attempt 1 of 30 at 2025-11-14 12:48:01...
+✅ Success! Got response:
+{"minDate":"2025-11-14","maxDate":"2025-11-14","offDates":["2025-11-14"],"weeklyOffDaysIndexes":[6]}
+❌ NO SLOTS AVAILABLE - Date is marked as off
+🔍 Checking passport slot availability...
+==========================================
+
+/home/rijan/passport/check-passport.sh: line 22: local: can only be used in a function
+⏳ Attempt 1 of 30 at 2025-11-14 12:51:01...
+✅ Success! Got response:
+{"minDate":"2025-11-14","maxDate":"2025-11-14","offDates":["2025-11-14"],"weeklyOffDaysIndexes":[6]}
+❌ NO SLOTS AVAILABLE - Date is marked as off
+🔍 Checking passport slot availability...
+==========================================
+
+/home/rijan/passport/check-passport.sh: line 22: local: can only be used in a function
+⏳ Attempt 1 of 30 at 2025-11-14 18:30:01...
+✅ Success! Got response:
+{"minDate":"2025-11-14","maxDate":"2025-11-14","offDates":["2025-11-14"],"weeklyOffDaysIndexes":[6]}
+❌ NO SLOTS AVAILABLE - Date is marked as off
+🔍 Checking passport slot availability...
+==========================================
+
+/home/rijan/passport/check-passport.sh: line 22: local: can only be used in a function
+⏳ Attempt 1 of 30 at 2025-11-14 18:33:01...
+✅ Success! Got response:
+{"minDate":"2025-11-14","maxDate":"2025-11-14","offDates":["2025-11-14"],"weeklyOffDaysIndexes":[6]}
+❌ NO SLOTS AVAILABLE - Date is marked as off
+🔍 Checking passport slot availability...
+==========================================
+
+/home/rijan/passport/check-passport.sh: line 22: local: can only be used in a function
+⏳ Attempt 1 of 30 at 2025-11-14 18:36:01...
+✅ Success! Got response:
+{"minDate":"2025-11-14","maxDate":"2025-11-14","offDates":["2025-11-14"],"weeklyOffDaysIndexes":[6]}
+❌ NO SLOTS AVAILABLE - Date is marked as off
+🔍 Checking passport slot availability...
+==========================================
+
+/home/rijan/passport/check-passport.sh: line 22: local: can only be used in a function
+⏳ Attempt 1 of 30 at 2025-11-14 18:39:01...
+✅ Success! Got response:
+{"minDate":"2025-11-14","maxDate":"2025-11-14","offDates":[],"weeklyOffDaysIndexes":[6]}
+🎉 SLOTS ARE AVAILABLE!
+ok🔍 Checking passport slot availability...
+==========================================
+
+/home/rijan/passport/check-passport.sh: line 22: local: can only be used in a function
+⏳ Attempt 1 of 30 at 2025-11-14 18:42:01...
+⚠️ HIGH TRAFFIC - Website has a waiting queue
+ok🔍 Checking passport slot availability...
+==========================================
+
+/home/rijan/passport/check-passport.sh: line 22: local: can only be used in a function
+⏳ Attempt 1 of 30 at 2025-11-14 18:45:01...
+✅ Success! Got response:
+{"minDate":"2025-11-14","maxDate":"2025-11-14","offDates":[],"weeklyOffDaysIndexes":[6]}
+🎉 SLOTS ARE AVAILABLE!
+ok🔍 Checking passport slot availability...
+==========================================
+
+/home/rijan/passport/check-passport.sh: line 22: local: can only be used in a function
+⏳ Attempt 1 of 30 at 2025-11-14 18:48:01...
+✅ Success! Got response:
+{"minDate":"2025-11-14","maxDate":"2025-11-14","offDates":[],"weeklyOffDaysIndexes":[6]}
+🎉 SLOTS ARE AVAILABLE!
+ok🔍 Checking passport slot availability...
+==========================================
+
+/home/rijan/passport/check-passport.sh: line 22: local: can only be used in a function
+⏳ Attempt 1 of 30 at 2025-11-14 18:51:01...
+✅ Success! Got response:
+{"minDate":"2025-11-14","maxDate":"2025-11-14","offDates":[],"weeklyOffDaysIndexes":[6]}
+🎉 SLOTS ARE AVAILABLE!
+ok🔍 Checking passport slot availability...
+==========================================
+
+⏳ Attempt 1 of 30 at 2025-11-14 18:54:01...
+Status Code: 200
+✅ Success! Got response:
+{
+  "minDate": "2025-11-14",
+  "maxDate": "2025-11-14",
+  "offDates": [],
+  "weeklyOffDaysIndexes": [
+    6
+  ]
+}
+🎉 SLOTS ARE AVAILABLE!
+🔍 Checking passport slot availability...
+==========================================
+
+⏳ Attempt 1 of 30 at 2025-11-14 18:57:01...
+Status Code: 503
+⚠️ HIGH TRAFFIC - Website has a waiting queue
+🔍 Checking passport slot availability...
+==========================================
+
+⏳ Attempt 1 of 30 at 2025-11-14 19:00:16...
+Status Code: 200
+✅ Success! Got response:
+{
+  "minDate": "2025-11-14",
+  "maxDate": "2025-11-14",
+  "offDates": [],
+  "weeklyOffDaysIndexes": [
+    6
+  ]
+}
+🎉 SLOTS ARE AVAILABLE!
+🔍 Checking passport slot availability...
+==========================================
+
+⏳ Attempt 1 of 30 at 2025-11-14 19:03:01...
+Status Code: 200
+✅ Success! Got response:
+{
+  "minDate": "2025-11-14",
+  "maxDate": "2025-11-14",
+  "offDates": [],
+  "weeklyOffDaysIndexes": [
+    6
+  ]
+}
+🎉 SLOTS ARE AVAILABLE!
+🔍 Checking passport slot availability...
+==========================================
+
+⏳ Attempt 1 of 30 at 2025-11-14 19:06:01...
+Status Code: 200
+✅ Success! Got response:
+{
+  "minDate": "2025-11-14",
+  "maxDate": "2025-11-14",
+  "offDates": [],
+  "weeklyOffDaysIndexes": [
+    6
+  ]
+}
+🎉 SLOTS ARE AVAILABLE!
+🔍 Checking passport slot availability...
+==========================================
+
+⏳ Attempt 1 of 30 at 2025-11-14 19:09:01...
+Status Code: 200
+✅ Success! Got response:
+{
+  "minDate": "2025-11-14",
+  "maxDate": "2025-11-14",
+  "offDates": [],
+  "weeklyOffDaysIndexes": [
+    6
+  ]
+}
+🎉 SLOTS ARE AVAILABLE!
+🔍 Checking passport slot availability...
+==========================================
+
+⏳ Attempt 1 of 30 at 2025-11-14 19:12:01...
+Status Code: 200
+✅ Success! Got response:
+{
+  "minDate": "2025-11-14",
+  "maxDate": "2025-11-14",
+  "offDates": [],
+  "weeklyOffDaysIndexes": [
+    6
+  ]
+}
+🎉 SLOTS ARE AVAILABLE!
+🔍 Checking passport slot availability...
+==========================================
+
+⏳ Attempt 1 of 30 at 2025-11-14 19:15:01...
+Status Code: 200
+✅ Success! Got response:
+{
+  "minDate": "2025-11-14",
+  "maxDate": "2025-11-14",
+  "offDates": [],
+  "weeklyOffDaysIndexes": [
+    6
+  ]
+}
+🎉 SLOTS ARE AVAILABLE!
+🔍 Checking passport slot availability...
+==========================================
+
+⏳ Attempt 1 of 30 at 2025-11-14 19:18:01...
+Status Code: 200
+✅ Success! Got response:
+{
+  "minDate": "2025-11-14",
+  "maxDate": "2025-11-14",
+  "offDates": [
+    "2025-11-14"
+  ],
+  "weeklyOffDaysIndexes": [
+    6
+  ]
+}
+❌ NO SLOTS AVAILABLE - Date is marked as off
+🔍 Checking passport slot availability...
+==========================================
+
+⏳ Attempt 1 of 30 at 2025-11-14 19:21:01...
+Status Code: 200
+✅ Success! Got response:
+{
+  "minDate": "2025-11-14",
+  "maxDate": "2025-11-14",
+  "offDates": [
+    "2025-11-14"
+  ],
+  "weeklyOffDaysIndexes": [
+    6
+  ]
+}
+❌ NO SLOTS AVAILABLE - Date is marked as off
+🔍 Checking passport slot availability...
+==========================================
+
+⏳ Attempt 1 of 30 at 2025-11-14 19:24:01...
+Status Code: 200
+✅ Success! Got response:
+{
+  "minDate": "2025-11-14",
+  "maxDate": "2025-11-14",
+  "offDates": [
+    "2025-11-14"
+  ],
+  "weeklyOffDaysIndexes": [
+    6
+  ]
+}
+❌ NO SLOTS AVAILABLE - Date is marked as off
+🔍 Checking passport slot availability...
+==========================================
+
+⏳ Attempt 1 of 30 at 2025-11-14 19:27:01...
+Status Code: 200
+✅ Success! Got response:
+{
+  "minDate": "2025-11-14",
+  "maxDate": "2025-11-14",
+  "offDates": [
+    "2025-11-14"
+  ],
+  "weeklyOffDaysIndexes": [
+    6
+  ]
+}
+❌ NO SLOTS AVAILABLE - Date is marked as off
+🔍 Checking passport slot availability...
+==========================================
+
+⏳ Attempt 1 of 30 at 2025-11-14 19:30:02...
+Status Code: 200
+✅ Success! Got response:
+{
+  "minDate": "2025-11-14",
+  "maxDate": "2025-11-14",
+  "offDates": [
+    "2025-11-14"
+  ],
+  "weeklyOffDaysIndexes": [
+    6
+  ]
+}
+❌ NO SLOTS AVAILABLE - Date is marked as off
+🔍 Checking passport slot availability...
+==========================================
+
+⏳ Attempt 1 of 30 at 2025-11-14 19:33:01...
+Status Code: 200
+✅ Success! Got response:
+{
+  "minDate": "2025-11-14",
+  "maxDate": "2025-11-14",
+  "offDates": [
+    "2025-11-14"
+  ],
+  "weeklyOffDaysIndexes": [
+    6
+  ]
+}
+❌ NO SLOTS AVAILABLE - Date is marked as off
+🔍 Checking passport slot availability...
+==========================================
+
+⏳ Attempt 1 of 30 at 2025-11-14 19:36:01...
+Status Code: 200
+✅ Success! Got response:
+{
+  "minDate": "2025-11-14",
+  "maxDate": "2025-11-14",
+  "offDates": [
+    "2025-11-14"
+  ],
+  "weeklyOffDaysIndexes": [
+    6
+  ]
+}
 ❌ NO SLOTS AVAILABLE - Date is marked as off
