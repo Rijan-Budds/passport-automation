@@ -1,0 +1,12 @@
+slack-bolt==1.18.0
+slack-sdk==3.27.0
+python-dotenv==1.0.0
+playwright==1.40.0
+transformers==4.36.2
+torch==2.1.2
+torchvision==0.16.2
+pillow==10.1.0
+supabase==1.1.2
+asyncio==3.4.3
+difflib
+datetime
