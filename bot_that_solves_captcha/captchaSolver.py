@@ -1,16 +1,22 @@
 import asyncio
 import os
 import io
+from datetime import datetime
 from dotenv import load_dotenv
 from slack_bolt.async_app import AsyncApp
 from slack_bolt.adapter.socket_mode.aiohttp import AsyncSocketModeHandler
 from transformers import VisionEncoderDecoderModel, TrOCRProcessor
 from playwright.async_api import async_playwright, TimeoutError as PlaywrightTimeoutError
 from PIL import Image
-from difflib import get_close_matches
+from supabase import create_client, Client
 
 # Load environment
 load_dotenv(".env.dev")
+
+# ================= Supabase Setup =================
+SUPABASE_URL = "https://zgsdyxdjrietcfvnnpij.supabase.co"
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inpnc2R5eGRqcmlldGNmdm5ucGlqIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2MzM5MTUzMywiZXhwIjoyMDc4OTY3NTMzfQ.plczcmX25JAXxJvdGjMlKpuDny2RTZtjsVqOiNJyGBo"
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # ================= Slack Bot Setup =================
 app = AsyncApp(
@@ -25,242 +31,713 @@ user_sessions = {}
 processor = TrOCRProcessor.from_pretrained("anuashok/ocr-captcha-v3")
 model = VisionEncoderDecoderModel.from_pretrained("anuashok/ocr-captcha-v3")
 
+
 async def solve_captcha(screenshot_bytes):
     image = Image.open(io.BytesIO(screenshot_bytes)).convert("RGBA")
     background = Image.new("RGBA", image.size, (255, 255, 255))
     combined = Image.alpha_composite(background, image).convert("RGB")
+
     pixel_values = processor(combined, return_tensors="pt").pixel_values
     generated_ids = model.generate(pixel_values)
     text = processor.batch_decode(generated_ids, skip_special_tokens=True)[0]
     return ''.join(filter(str.isalnum, text))
 
-# ================= Province → Districts mapping =================
-PROVINCES = {
-    "Province 1": ["Taplejung", "Panchthar", "Ilam", "Morang", "Sunsari", "Jhapa"],
-    "Province 2": ["Saptari", "Siraha", "Dhanusha", "Mahottari", "Sarlahi", "Rautahat", "Bara", "Parsa"],
-    "Bagmati": ["Kathmandu", "Lalitpur", "Bhaktapur", "Dhading", "Nuwakot", "Rasuwa", "Sindhupalchok"],
-    "Gandaki": ["Kaski", "Lamjung", "Tanahun", "Gorkha", "Manang"],
-    "Lumbini": ["Rupandehi", "Kapilvastu", "Arghakhanchi", "Palpa", "Dang"],
-    "Karnali": ["Surkhet", "Dailekh", "Jumla", "Dolpa"],
-    "Sudurpashchim": ["Bajura", "Bajhang", "Dadeldhura", "Kailali", "Doti"]
-}
 
-# ================= District Offices =================
-DISTRICT_OFFICES = {
-    "Kathmandu": ["DAO Kathmandu", "Department of Passport"],
-    "Lalitpur": ["Lalitpur"],
-    "Bhaktapur": ["Bhaktapur"],
-    "Kaski": ["Kaski"],
-    "Morang": ["Morang"],
-    "Jhapa": ["Jhapa"],
-    "Rupandehi": ["Rupandehi"],
-    "Sunsari": ["Sunsari"],
-    "Banke": ["Banke"],
-    "Bardiya": ["Bardiya"],
-    "Chitwan": ["Chitwan"]
-}
+# ================= Supabase Functions =================
+async def get_available_slots(district: str):
+    """Fetch available slots from Supabase for a specific district"""
+    try:
+        # Query the slots_available table
+        response = supabase.table("slots_available")\
+            .select("*")\
+            .eq("district", district)\
+            .gte("date", datetime.now().date().isoformat())\
+            .order("date", desc=False)\
+            .execute()
+        
+        if response.data:
+            return response.data
+        else:
+            return []
+    except Exception as e:
+        print(f"Error fetching slots from Supabase: {e}")
+        return []
 
-# ================= Helper Functions =================
-def match_province(user_input):
-    matches = get_close_matches(user_input.title(), PROVINCES.keys(), n=1, cutoff=0.5)
-    return matches[0] if matches else None
 
-def match_district(user_input, province):
-    districts = PROVINCES.get(province, [])
-    matches = get_close_matches(user_input.title(), districts, n=1, cutoff=0.5)
-    return matches[0] if matches else None
+async def get_available_offices(district: str):
+    """Fetch available offices for a district from Supabase"""
+    try:
+        response = supabase.table("slots_available")\
+            .select("name")\
+            .eq("district", district)\
+            .gte("date", datetime.now().date().isoformat())\
+            .execute()
+        
+        # Extract unique office names
+        offices = []
+        seen = set()
+        for item in response.data:
+            office_name = item.get("name")
+            if office_name and office_name not in seen:
+                offices.append(office_name)
+                seen.add(office_name)
+        
+        return offices
+    except Exception as e:
+        print(f"Error fetching offices from Supabase: {e}")
+        return []
 
-# ================= Form Filling Functions =================
-async def fill_personal_information(page, user_data, user_id, say):
+
+async def format_slots_for_date_selection(available_slots):
+    """Format slots for date selection display"""
+    if not available_slots:
+        return None, None
+    
+    # Group slots by date
+    dates_slots = {}
+    for slot in available_slots:
+        date_str = slot.get("date")
+        if date_str:
+            if date_str not in dates_slots:
+                dates_slots[date_str] = []
+            dates_slots[date_str].append(slot)
+    
+    # Format dates for selection
+    formatted_dates = []
+    date_mapping = {}
+    
+    for i, (date_str, slots) in enumerate(dates_slots.items(), 1):
+        try:
+            date_obj = datetime.strptime(date_str, "%Y-%m-%d")
+            day_name = date_obj.strftime("%A")
+            formatted_date = date_obj.strftime("%B %d, %Y")
+            short_date = date_obj.strftime("%m-%d")
+            
+            # Count available time slots
+            time_slots_count = len(slots)
+            
+            formatted_dates.append(f"{i}. {short_date} ({day_name}) - {time_slots_count} slots available")
+            date_mapping[str(i)] = {
+                "date": date_str,
+                "formatted_date": formatted_date,
+                "slots": slots
+            }
+        except:
+            continue
+    
+    return "\n".join(formatted_dates), date_mapping
+
+
+async def format_time_slots_for_selection(date_slots):
+    """Format time slots for selection display"""
+    if not date_slots:
+        return None, None
+    
+    formatted_times = []
+    time_mapping = {}
+    
+    for i, slot in enumerate(date_slots, 1):
+        time_slot = slot.get("name", "Unknown")
+        normal_capacity = slot.get("normal_capacity", 0)
+        vip_capacity = slot.get("vip_capacity", 0)
+        
+        capacity_text = []
+        if normal_capacity > 0:
+            capacity_text.append(f"Normal: {normal_capacity}")
+        if vip_capacity > 0:
+            capacity_text.append(f"VIP: {vip_capacity}")
+        
+        capacity_str = f" ({', '.join(capacity_text)})" if capacity_text else ""
+        formatted_times.append(f"{i}. {time_slot}{capacity_str}")
+        time_mapping[str(i)] = {
+            "time_slot": time_slot,
+            "normal_capacity": normal_capacity,
+            "vip_capacity": vip_capacity,
+            "slot_data": slot
+        }
+    
+    return "\n".join(formatted_times), time_mapping
+
+
+# ================= Form Modules =================
+
+async def demographic_information(page, user_data, user_id, say):
     """Fill the personal information form on the next page"""
     try:
-        await say("📝 Starting to fill personal information form...")
+        await say("📝 Starting to fill demographic information form...")
         
-        # Wait for form to be visible
+        # Wait for the form to be visible
         await page.wait_for_selector("form", timeout=10000)
         
-        # Fill basic information fields
+        # Fill text inputs
         form_fields = {
             "firstName": user_data.get("first_name", ""),
-            "middleName": user_data.get("middle_name", ""),
             "lastName": user_data.get("last_name", ""),
-            "email": user_data.get("email", ""),
-            "phone": user_data.get("phone", ""),
-            "citizenshipNumber": user_data.get("citizenship_number", ""),
-            "dateOfBirth": user_data.get("dob", ""),
+            "dateOfBirth": user_data.get("date_of_birth_ad", ""),  # AD date
+            "dateOfBirthBS": user_data.get("date_of_birth_bs", ""),  # BS date
+            "birthDistrict": user_data.get("birth_district", ""),
+            "fatherLastName": user_data.get("father_last_name", ""),
+            "fatherFirstName": user_data.get("father_first_name", ""),
+            "motherLastName": user_data.get("mother_last_name", ""),
+            "motherFirstName": user_data.get("mother_first_name", "")
         }
         
         filled_fields = 0
         for field_name, value in form_fields.items():
-            if value:
+            if not value:
+                continue
+            selectors = [
+                f"input[name='{field_name}']",
+                f"input[formcontrolname='{field_name}']",
+                f"#{field_name}",
+                f"input[placeholder*='{field_name.title()}']",
+                f"input[placeholder*='{field_name}']"
+            ]
+            for selector in selectors:
                 try:
-                    # Try different selector patterns
-                    selectors = [
-                        f"input[name='{field_name}']",
-                        f"input[formcontrolname='{field_name}']",
-                        f"#{field_name}",
-                        f"input[placeholder*='{field_name.title()}']",
-                        f"input[placeholder*='{field_name}']"
-                    ]
-                    
-                    for selector in selectors:
-                        try:
-                            field = await page.wait_for_selector(selector, timeout=1000)
-                            if field:
-                                await field.fill(value)
-                                await say(f"✅ Filled {field_name}")
-                                filled_fields += 1
-                                break
-                        except:
-                            continue
-                except Exception as e:
-                    await say(f"⚠️ Could not fill {field_name}: {e}")
+                    field = await page.wait_for_selector(selector, timeout=1000)
+                    if field:
+                        await field.fill(value)
+                        await say(f"✅ Filled {field_name}")
+                        filled_fields += 1
+                        break
+                except:
+                    continue
+        
+        # Handle radio buttons
+        # Gender radio
+        gender = user_data.get("gender", "Male").lower()
+        gender_mapping = {
+            "male": "M",
+            "female": "F", 
+            "other": "X"
+        }
+        gender_value = gender_mapping.get(gender, "M")
+        
+        try:
+            gender_selectors = [
+                f"input[formcontrolname='gender'][value='{gender_value}']",
+                f"input[name='gender'][value='{gender_value}']",
+                f"input[value='{gender_value}']"
+            ]
+            for selector in gender_selectors:
+                try:
+                    gender_radio = await page.wait_for_selector(selector, timeout=1000)
+                    if gender_radio:
+                        await gender_radio.click()
+                        await say(f"✅ Selected gender: {gender}")
+                        filled_fields += 1
+                        break
+                except:
+                    continue
+        except Exception as e:
+            await say(f"⚠️ Could not select gender radio: {e}")
+        
+        # Exact DOB radio (default to Yes/true)
+        try:
+            dob_selectors = [
+                "input[formcontrolname='isExactDateOfBirth'][value='true']",
+                "input[name='isExactDateOfBirth'][value='true']",
+                "input[value='true']:has(+ label:has-text('Yes'))"
+            ]
+            for selector in dob_selectors:
+                try:
+                    dob_radio = await page.wait_for_selector(selector, timeout=1000)
+                    if dob_radio:
+                        await dob_radio.click()
+                        await say("✅ Selected exact DOB: Yes")
+                        filled_fields += 1
+                        break
+                except:
+                    continue
+        except Exception as e:
+            await say(f"⚠️ Could not select exact DOB radio: {e}")
         
         # Handle dropdowns
         dropdown_fields = {
-            "gender": user_data.get("gender", "Male"),
             "maritalStatus": user_data.get("marital_status", "Unmarried"),
             "education": user_data.get("education", "Bachelor"),
         }
         
         for field_name, value in dropdown_fields.items():
+            if not value:
+                continue
+            dropdown_selectors = [
+                f"mat-select[formcontrolname='{field_name}']",
+                f"mat-select[name='{field_name}']",
+                f"select[name='{field_name}']"
+            ]
+            for selector in dropdown_selectors:
+                try:
+                    dropdown = await page.wait_for_selector(selector, timeout=1000)
+                    if dropdown:
+                        await dropdown.click()
+                        await page.wait_for_selector("mat-option", timeout=2000)
+                        option = await page.query_selector(f"mat-option:has-text('{value}')")
+                        if option:
+                            await option.click()
+                            await say(f"✅ Selected {field_name}: {value}")
+                            filled_fields += 1
+                        break
+                except:
+                    continue
+        
+        await say(f"✅ Demographic information filled successfully! ({filled_fields} fields)")
+        return True
+        
+    except Exception as e:
+        await say(f"❌ Error filling demographic information: {e}")
+        return False
+
+
+async def citizen_information(page, user_data, user_id, say):
+    """Fill the citizenship information form"""
+    try:
+        await say("🆔 Starting to fill citizenship information...")
+        await page.wait_for_selector("form", timeout=10000)
+        
+        # Field mapping
+        field_mapping = {
+            "nin": "nin",
+            "citizen_number": "citizenNum",
+            "citizen_issue_date_bs": "citizenIssueDateBS",
+            "citizen_issue_place_district": "citizenIssuePlaceDistrict"
+        }
+        
+        filled_fields = 0
+        for question_key, form_field in field_mapping.items():
+            value = user_data.get(question_key, "")
+            if not value:
+                continue
+            
+            selectors = [
+                f"input[name='{form_field}']",
+                f"input[formcontrolname='{form_field}']",
+                f"#{form_field}",
+                f"input[placeholder*='{form_field}']"
+            ]
+            
+            for selector in selectors:
+                try:
+                    field = await page.wait_for_selector(selector, timeout=1000)
+                    if field:
+                        await field.fill(value)
+                        await say(f"✅ Filled {form_field}")
+                        filled_fields += 1
+                        break
+                except:
+                    continue
+        
+        await say(f"✅ Citizenship information filled! ({filled_fields} fields)")
+        return True
+        
+    except Exception as e:
+        await say(f"❌ Error filling citizenship information: {e}")
+        return False
+
+
+async def contact_information(page, user_data, user_id, say):
+    """Fill the contact information form"""
+    try:
+        await say("📱 Starting to fill contact information...")
+        await page.wait_for_selector("form", timeout=10000)
+        
+        # Field mapping
+        field_mapping = {
+            "email": "email",
+            "mobile": "mobile",
+            "home_phone": "homePhone",
+            "main_address_street": "mainAddressStreetVillage", 
+            "main_ward": "mainAddressWard",
+            "main_province": "mainAddressProvince",
+            "main_district": "mainAddressDistrict",
+            "main_municipality": "mainAddressMunicipality"
+        }
+        
+        filled_fields = 0
+        for question_key, form_field in field_mapping.items():
+            value = user_data.get(question_key, "")
+            if not value:
+                continue
+            
+            selectors = [
+                f"input[name='{form_field}']",
+                f"input[formcontrolname='{form_field}']",
+                f"#{form_field}",
+                f"input[placeholder*='{form_field}']"
+            ]
+            
+            for selector in selectors:
+                try:
+                    field = await page.wait_for_selector(selector, timeout=1000)
+                    if field:
+                        await field.fill(value)
+                        await say(f"✅ Filled {form_field}")
+                        filled_fields += 1
+                        break
+                except:
+                    continue
+        
+        await say(f"✅ Contact information filled! ({filled_fields} fields)")
+        return True
+        
+    except Exception as e:
+        await say(f"❌ Error filling contact information: {e}")
+        return False
+
+
+async def emergency_info(page, user_data, user_id, say):
+    """Fill the emergency contact information form"""
+    try:
+        await say("🆘 Starting to fill emergency information...")
+        await page.wait_for_selector("form", timeout=10000)
+        
+        # Field mapping
+        field_mapping = {
+            "contact_last_name": "contactLastName",
+            "contact_first_name": "contactFirstName",
+            "contact_house_number": "contactHouseNum",
+            "contact_street": "contactStreetVillage",
+            "contact_ward": "contactWard",
+            "contact_province": "contactProvince",
+            "contact_district": "contactDistrict",
+            "contact_municipality": "contactMunicipality",
+            "contact_phone": "contactPhone"
+        }
+        
+        filled_fields = 0
+        for question_key, form_field in field_mapping.items():
+            value = user_data.get(question_key, "")
+            if not value:
+                continue
+            
+            selectors = [
+                f"input[name='{form_field}']",
+                f"input[formcontrolname='{form_field}']",
+                f"#{form_field}",
+                f"input[placeholder*='{form_field}']"
+            ]
+            
+            for selector in selectors:
+                try:
+                    field = await page.wait_for_selector(selector, timeout=1000)
+                    if field:
+                        await field.fill(value)
+                        await say(f"✅ Filled {form_field}")
+                        filled_fields += 1
+                        break
+                except:
+                    continue
+        
+        await say(f"✅ Emergency information filled! ({filled_fields} fields)")
+        return True
+        
+    except Exception as e:
+        await say(f"❌ Error filling emergency information: {e}")
+        return False
+
+
+async def fill_renewal_information(page, user_data, user_id, say):
+    """Fill the renewal-specific information fields"""
+    try:
+        await say("📋 Starting to fill renewal information...")
+        
+        # Renewal fields
+        renewal_fields = {
+            "currentTDNum": {
+                "value": user_data.get("currentTDNum", ""),
+                "type": "input",
+                "placeholder": "current Travel Document number"
+            },
+            "currentTDIssueDate": {
+                "value": user_data.get("currentTDIssueDate", ""),
+                "type": "date",
+                "placeholder": "current TD issue date"
+            },
+            "currenttdIssuePlaceDistrict": {
+                "value": user_data.get("currenttdIssuePlaceDistrict", ""),
+                "type": "dropdown",
+                "placeholder": "current TD issue district"
+            }
+        }
+        
+        filled_fields = 0
+        for field_name, field_info in renewal_fields.items():
+            value = field_info.get("value")
+            field_type = field_info.get("type")
+            placeholder_hint = field_info.get("placeholder", "")
+            
+            if value:
+                try:
+                    if field_type == "input":
+                        selectors = [
+                            f"input[name='{field_name}']",
+                            f"input[formcontrolname='{field_name}']",
+                            f"input[placeholder*='{placeholder_hint}']",
+                            f"#{field_name}",
+                            f"input.ng-pristine[formcontrolname*='TD']"
+                        ]
+                        
+                        for selector in selectors:
+                            try:
+                                field = await page.wait_for_selector(selector, timeout=2000)
+                                if field:
+                                    await field.fill(value)
+                                    await say(f"✅ Filled {field_name}: {value}")
+                                    filled_fields += 1
+                                    break
+                            except:
+                                continue
+                    
+                    elif field_type == "date":
+                        date_selectors = [
+                            f"input[name='{field_name}']",
+                            f"input[formcontrolname='{field_name}']",
+                            f"input.dateInput[formcontrolname*='Date']",
+                            f"input[readonly][formcontrolname*='Date']"
+                        ]
+                        
+                        for selector in date_selectors:
+                            try:
+                                date_field = await page.wait_for_selector(selector, timeout=2000)
+                                if date_field:
+                                    await date_field.click()
+                                    await page.wait_for_timeout(1000)
+                                    
+                                    await page.evaluate(f'''
+                                        (selector, value) => {{
+                                            const element = document.querySelector(selector);
+                                            if (element) {{
+                                                element.value = value;
+                                                element.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                                                element.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                                            }}
+                                        }}
+                                    ''', selector, value)
+                                    
+                                    await page.keyboard.press("Tab")
+                                    await say(f"✅ Set {field_name}: {value}")
+                                    filled_fields += 1
+                                    break
+                            except:
+                                continue
+                    
+                    elif field_type == "dropdown":
+                        dropdown_selectors = [
+                            f"mat-select[formcontrolname='{field_name}']",
+                            f"mat-select[name='{field_name}']",
+                            f"mat-select[formcontrolname*='District']",
+                            f"mat-select.ng-pristine[formcontrolname*='Place']"
+                        ]
+                        
+                        for selector in dropdown_selectors:
+                            try:
+                                dropdown = await page.wait_for_selector(selector, timeout=2000)
+                                if dropdown:
+                                    await dropdown.click()
+                                    await page.wait_for_selector("mat-option", timeout=3000)
+                                    
+                                    option_selectors = [
+                                        f"mat-option:has-text('{value}')",
+                                        f"mat-option span:has-text('{value}')",
+                                        f"mat-option:contains('{value}')"
+                                    ]
+                                    
+                                    option_found = False
+                                    for opt_selector in option_selectors:
+                                        try:
+                                            option = await page.wait_for_selector(opt_selector, timeout=1500)
+                                            if option:
+                                                await option.click()
+                                                await say(f"✅ Selected {field_name}: {value}")
+                                                filled_fields += 1
+                                                option_found = True
+                                                break
+                                        except:
+                                            continue
+                                    
+                                    if not option_found:
+                                        await page.keyboard.type(value)
+                                        await page.wait_for_timeout(1000)
+                                        await page.keyboard.press("Enter")
+                                        await say(f"✅ Typed and selected {field_name}: {value}")
+                                        filled_fields += 1
+                                    
+                                    break
+                            except:
+                                continue
+                
+                except Exception as e:
+                    await say(f"⚠️ Could not fill {field_name}: {str(e)}")
+        
+        # Also handle old passport number if present
+        old_passport = user_data.get("old_passport_number")
+        if old_passport:
             try:
-                dropdown_selectors = [
-                    f"mat-select[formcontrolname='{field_name}']",
-                    f"mat-select[name='{field_name}']",
-                    f"select[name='{field_name}']"
+                old_passport_selectors = [
+                    "input[name='oldPassportNumber']",
+                    "input[formcontrolname='oldPassportNumber']",
+                    "input[placeholder*='Old Passport']",
+                    "input[placeholder*='Previous Passport']"
                 ]
                 
-                for selector in dropdown_selectors:
+                for selector in old_passport_selectors:
                     try:
-                        dropdown = await page.wait_for_selector(selector, timeout=1000)
-                        if dropdown:
-                            await dropdown.click()
-                            await page.wait_for_selector("mat-option", timeout=2000)
-                            
-                            # Try to select the option
-                            option = await page.query_selector(f"mat-option:has-text('{value}')")
-                            if option:
-                                await option.click()
-                                await say(f"✅ Selected {field_name}: {value}")
-                                filled_fields += 1
+                        field = await page.wait_for_selector(selector, timeout=1500)
+                        if field:
+                            await field.fill(old_passport)
+                            await say(f"✅ Filled old passport number: {old_passport}")
+                            filled_fields += 1
                             break
                     except:
                         continue
             except Exception as e:
-                await say(f"⚠️ Could not select {field_name}: {e}")
+                await say(f"⚠️ Could not fill old passport number: {e}")
         
-        await say(f"✅ Personal information form filled successfully! ({filled_fields} fields)")
+        await say(f"✅ Renewal information filled successfully! ({filled_fields} fields)")
         return True
         
     except Exception as e:
-        await say(f"❌ Error filling personal information: {e}")
+        await say(f"❌ Error filling renewal information: {e}")
         return False
 
-async def fill_address_information(page, user_data, user_id, say):
-    """Fill the address information form"""
+
+async def handle_next_page(page, user_data, user_id, say):
+    """Handle the form on the next page after captcha"""
     try:
-        await say("🏠 Starting to fill address information...")
+        # Wait for the next page to load
+        await page.wait_for_timeout(3000)
         
-        # Fill permanent address fields
-        address_fields = {
-            "permanentDistrict": user_data.get("permanent_district", user_data.get("district", "")),
-            "permanentMunicipality": user_data.get("permanent_municipality", ""),
-            "permanentWard": user_data.get("permanent_ward", ""),
-            "permanentTole": user_data.get("permanent_tole", ""),
-            "currentDistrict": user_data.get("current_district", user_data.get("district", "")),
-            "currentMunicipality": user_data.get("current_municipality", user_data.get("permanent_municipality", "")),
-            "currentWard": user_data.get("current_ward", user_data.get("permanent_ward", "")),
-            "currentTole": user_data.get("current_tole", user_data.get("permanent_tole", "")),
-        }
+        # Check if we're on the personal information page
+        current_url = page.url
+        await say(f"🔗 Now on page: {current_url}")
         
-        filled_fields = 0
-        for field_name, value in address_fields.items():
-            if value:
+        # Check if this is a renewal application
+        is_renewal = user_data.get("application_type") == "renewal"
+        
+        if is_renewal:
+            await say("🔄 This is a renewal application. Looking for renewal-specific fields...")
+            
+            renewal_field_indicators = [
+                "input[formcontrolname='currentTDNum']",
+                "input[formcontrolname='currentTDIssueDate']",
+                "mat-select[formcontrolname='currenttdIssuePlaceDistrict']",
+                "text*='Travel Document'",
+                "text*='Previous Passport'"
+            ]
+            
+            has_renewal_fields = False
+            for indicator in renewal_field_indicators:
                 try:
-                    selectors = [
-                        f"input[name='{field_name}']",
-                        f"input[formcontrolname='{field_name}']",
-                        f"#{field_name}",
-                        f"mat-select[formcontrolname='{field_name}']"
-                    ]
-                    
-                    for selector in selectors:
-                        try:
-                            field = await page.wait_for_selector(selector, timeout=1000)
-                            if field:
-                                # Check if it's a dropdown (mat-select) or input field
-                                if "mat-select" in selector:
-                                    await field.click()
-                                    await page.wait_for_selector("mat-option", timeout=2000)
-                                    option = await page.query_selector(f"mat-option:has-text('{value}')")
-                                    if option:
-                                        await option.click()
-                                else:
-                                    await field.fill(value)
-                                
-                                await say(f"✅ Filled {field_name}")
-                                filled_fields += 1
-                                break
-                        except:
-                            continue
-                except Exception as e:
-                    await say(f"⚠️ Could not fill {field_name}: {e}")
+                    await page.wait_for_selector(indicator, timeout=2000)
+                    has_renewal_fields = True
+                    break
+                except:
+                    continue
+            
+            if has_renewal_fields:
+                await say("✅ Found renewal-specific fields. Filling them first...")
+                renewal_success = await fill_renewal_information(page, user_data, user_id, say)
+                if not renewal_success:
+                    await say("⚠️ Could not fill all renewal information, but continuing...")
+            else:
+                await say("ℹ️ No renewal-specific fields found on this page.")
         
-        await say(f"✅ Address information filled successfully! ({filled_fields} fields)")
+        # FILL DEMOGRAPHIC INFORMATION
+        await say("👤 Starting to fill demographic information...")
+        demographic_success = await demographic_information(page, user_data, user_id, say)
+        if not demographic_success:
+            return False
+        
+        # Navigate to next section (Citizen Info)
+        next_btn_selectors = [
+            "button:has-text('Next')",
+            "a.btn-primary:has-text('Next')",
+            "button[type='submit']:has-text('Next')",
+            "button:has-text('Continue')"
+        ]
+        
+        next_btn = None
+        for selector in next_btn_selectors:
+            try:
+                next_btn = await page.wait_for_selector(selector, timeout=3000)
+                if next_btn:
+                    break
+            except:
+                continue
+        
+        if next_btn:
+            async with page.expect_navigation(timeout=15000) as navigation_info:
+                await next_btn.click()
+            await navigation_info.value
+            await say("✅ Moved to citizenship information page!")
+            
+            # FILL CITIZEN INFORMATION
+            await say("📄 Filling citizenship information...")
+            citizen_success = await citizen_information(page, user_data, user_id, say)
+            if not citizen_success:
+                return False
+            
+            # Navigate to next section (Contact Info)
+            next_btn = None
+            for selector in next_btn_selectors:
+                try:
+                    next_btn = await page.wait_for_selector(selector, timeout=3000)
+                    if next_btn:
+                        break
+                except:
+                    continue
+            
+            if next_btn:
+                async with page.expect_navigation(timeout=15000) as navigation_info:
+                    await next_btn.click()
+                await navigation_info.value
+                await say("✅ Moved to contact information page!")
+                
+                # FILL CONTACT INFORMATION
+                await say("📱 Filling contact information...")
+                contact_success = await contact_information(page, user_data, user_id, say)
+                if not contact_success:
+                    return False
+                
+                # Navigate to next section (Emergency Info)
+                next_btn = None
+                for selector in next_btn_selectors:
+                    try:
+                        next_btn = await page.wait_for_selector(selector, timeout=3000)
+                        if next_btn:
+                            break
+                    except:
+                        continue
+                
+                if next_btn:
+                    async with page.expect_navigation(timeout=15000) as navigation_info:
+                        await next_btn.click()
+                    await navigation_info.value
+                    await say("✅ Moved to emergency information page!")
+                    
+                    # FILL EMERGENCY INFORMATION
+                    await say("🆘 Filling emergency information...")
+                    emergency_success = await emergency_info(page, user_data, user_id, say)
+                    if not emergency_success:
+                        return False
+                    
+                    await say("🎉 All forms filled successfully! Ready for final submission.")
+                    return True
+        
         return True
         
     except Exception as e:
-        await say(f"❌ Error filling address information: {e}")
+        await say(f"❌ Error handling next page: {e}")
         return False
 
-async def fill_family_information(page, user_data, user_id, say):
-    """Fill family information form"""
-    try:
-        await say("👨‍👩‍👧‍👦 Starting to fill family information...")
-        
-        family_fields = {
-            "fatherName": user_data.get("father_name", ""),
-            "motherName": user_data.get("mother_name", ""),
-            "spouseName": user_data.get("spouse_name", ""),
-        }
-        
-        filled_fields = 0
-        for field_name, value in family_fields.items():
-            if value:
-                try:
-                    selectors = [
-                        f"input[name='{field_name}']",
-                        f"input[formcontrolname='{field_name}']",
-                        f"#{field_name}"
-                    ]
-                    
-                    for selector in selectors:
-                        try:
-                            field = await page.wait_for_selector(selector, timeout=1000)
-                            if field:
-                                await field.fill(value)
-                                await say(f"✅ Filled {field_name}")
-                                filled_fields += 1
-                                break
-                        except:
-                            continue
-                except Exception as e:
-                    await say(f"⚠️ Could not fill {field_name}: {e}")
-        
-        await say(f"✅ Family information filled successfully! ({filled_fields} fields)")
-        return True
-        
-    except Exception as e:
-        await say(f"❌ Error filling family information: {e}")
-        return False
 
 async def handle_captcha_failure(page, say, attempt):
     """Handle the captcha failure by clicking the Close button and reloading captcha"""
     try:
         await say(f"🔄 Handling captcha failure for attempt {attempt}...")
         
-        # Look for the Close button with multiple possible selectors
+        # Look for the Close button
         close_button_selectors = [
             "button#landing-button-2",
             "button.btn-primary:has-text('Close')",
@@ -289,7 +766,7 @@ async def handle_captcha_failure(page, say, attempt):
             "span.reload-btn",
             "button#reload-captcha",
             "button:has-text('Reload')",
-            "img.captcha-img"  # Sometimes clicking the image reloads it
+            "img.captcha-img"
         ]
         
         reload_btn = None
@@ -299,13 +776,12 @@ async def handle_captcha_failure(page, say, attempt):
                 if reload_btn:
                     await reload_btn.click()
                     await say("🔄 Captcha reloaded.")
-                    await page.wait_for_timeout(2000)
+                    await page.wait_for_timeout(2002)
                     break
             except:
                 continue
         
         if not reload_btn:
-            # If no reload button found, wait a bit and continue
             await say("⚠️ No reload button found, waiting before retry...")
             await page.wait_for_timeout(3000)
         
@@ -315,6 +791,7 @@ async def handle_captcha_failure(page, say, attempt):
         await say(f"❌ Error handling captcha failure: {e}")
         return False
 
+
 # ================= Passport Automation =================
 async def automate_passport_application(user_data, user_id, say):
     async with async_playwright() as p:
@@ -322,17 +799,25 @@ async def automate_passport_application(user_data, user_id, say):
         page = await browser.new_page()
         try:
             await page.goto("https://emrtds.nepalpassport.gov.np")
+            await page.wait_for_timeout(3000)
 
-            # FIRST ISSUANCE
-            await page.wait_for_selector("text=First Issuance")
-            await page.click("text=First Issuance")
+            # DETERMINE APPLICATION TYPE
+            if user_data.get("application_type") == "renewal":
+                await say("🔄 Starting passport renewal process...")
+                await page.wait_for_selector("text=Passport Renewal", timeout=10000)
+                await page.click("text=Passport Renewal")
+            else:
+                await say("🆕 Starting new passport application (First Issuance)...")
+                await page.wait_for_selector("text=First Issuance", timeout=10000)
+                await page.click("text=First Issuance")
 
             # PASSPORT TYPE
-            await page.wait_for_selector("label.main-doc-types")
-            await page.click(f"label.main-doc-types:has-text('{user_data['passport_type']}')")
+            await page.wait_for_selector("label.main-doc-types", timeout=10000)
+            passport_type = user_data.get('passport_type', 'Regular')
+            await page.click(f"label.main-doc-types:has-text('{passport_type}')")
 
             # PROCEED
-            await page.wait_for_selector("text=Proceed")
+            await page.wait_for_selector("text=Proceed", timeout=10000)
             await page.click("text=Proceed")
 
             # CONSENT POPUP
@@ -344,79 +829,284 @@ async def automate_passport_application(user_data, user_id, say):
 
             # WAIT FOR APPOINTMENT PAGE
             await page.wait_for_url("**/appointment", timeout=15000)
+            await page.wait_for_timeout(2000)
 
             # SELECT COUNTRY, PROVINCE, DISTRICT, OFFICE
             selects = await page.query_selector_all("mat-select")
-            await selects[0].click()  # Country (fixed)
-            await page.click("mat-option >> text=Nepal")  # Fixed
+            await say(f"Found {len(selects)} dropdowns on the page")
+            
+            # Country
+            if len(selects) > 0:
+                await selects[0].click()
+                await page.wait_for_selector("mat-option", timeout=5000)
+                nepal_selectors = [
+                    "mat-option:has-text('Nepal')",
+                    "mat-option span:has-text('Nepal')",
+                    "mat-option .mat-option-text:has-text('Nepal')"
+                ]
+                
+                nepal_selected = False
+                for selector in nepal_selectors:
+                    try:
+                        nepal_option = await page.wait_for_selector(selector, timeout=2000)
+                        if nepal_option:
+                            await nepal_option.click()
+                            await say("✅ Selected country: Nepal")
+                            nepal_selected = True
+                            break
+                    except:
+                        continue
+                
+                if not nepal_selected:
+                    await say("⚠️ Could not select Nepal, trying keyboard navigation...")
+                    await page.keyboard.press("ArrowDown")
+                    await page.wait_for_timeout(500)
+                    await page.keyboard.press("Enter")
 
-            await selects[1].click()
-            await page.click(f"mat-option >> text={user_data['province']}")
+            # Province
+            await page.wait_for_timeout(2000)
+            if len(selects) > 1:
+                province = user_data.get('province', '')
+                await selects[1].click()
+                await page.wait_for_selector("mat-option", timeout=5000)
+                
+                province_selected = False
+                province_selectors = [
+                    f"mat-option:has-text('{province}')",
+                    f"mat-option span:has-text('{province}')",
+                    f"mat-option .mat-option-text:has-text('{province}')"
+                ]
+                
+                for selector in province_selectors:
+                    try:
+                        province_option = await page.wait_for_selector(selector, timeout=2000)
+                        if province_option:
+                            await province_option.click()
+                            await say(f"✅ Selected province: {province}")
+                            province_selected = True
+                            break
+                    except:
+                        continue
+                
+                if not province_selected:
+                    await say(f"⚠️ Could not select province {province}, trying alternative method...")
+                    await page.keyboard.type(province)
+                    await page.wait_for_timeout(1000)
+                    await page.keyboard.press("Enter")
 
-            await selects[2].click()
-            await page.click(f"mat-option >> text={user_data['district']}")
+            # District
+            await page.wait_for_timeout(2000)
+            if len(selects) > 2:
+                district = user_data.get('district', '')
+                await selects[2].click()
+                await page.wait_for_selector("mat-option", timeout=5000)
+                
+                district_selected = False
+                district_selectors = [
+                    f"mat-option:has-text('{district}')",
+                    f"mat-option span:has-text('{district}')",
+                    f"mat-option .mat-option-text:has-text('{district}')",
+                    f"mat-option:contains('{district}')"
+                ]
+                
+                for selector in district_selectors:
+                    try:
+                        district_option = await page.wait_for_selector(selector, timeout=2000)
+                        if district_option:
+                            await district_option.click()
+                            await say(f"✅ Selected district: {district}")
+                            district_selected = True
+                            break
+                    except:
+                        continue
+                
+                if not district_selected:
+                    await say(f"⚠️ Could not select district {district}, trying search...")
+                    search_input = await page.query_selector("input[placeholder*='Search'], input[type='search']")
+                    if search_input:
+                        await search_input.fill(district)
+                        await page.wait_for_timeout(1000)
+                        first_option = await page.query_selector("mat-option")
+                        if first_option:
+                            await first_option.click()
+                    else:
+                        await page.keyboard.type(district)
+                        await page.wait_for_timeout(1000)
+                        await page.keyboard.press("Enter")
 
-            await selects[3].click()
-            await page.click(f"mat-option >> text={user_data['office']}")
+            # Office
+            await page.wait_for_timeout(2000)
+            if len(selects) > 3:
+                office = user_data.get('office', '')
+                await selects[3].click()
+                await page.wait_for_selector("mat-option", timeout=5000)
+                
+                office_selected = False
+                office_selectors = [
+                    f"mat-option:has-text('{office}')",
+                    f"mat-option span:has-text('{office}')",
+                    f"mat-option .mat-option-text:has-text('{office}')"
+                ]
+                
+                for selector in office_selectors:
+                    try:
+                        office_option = await page.wait_for_selector(selector, timeout=2000)
+                        if office_option:
+                            await office_option.click()
+                            await say(f"✅ Selected office: {office}")
+                            office_selected = True
+                            break
+                    except:
+                        continue
+                
+                if not office_selected:
+                    await say(f"⚠️ Could not select office {office}, trying alternative...")
+                    await page.keyboard.type(office[:3])
+                    await page.wait_for_timeout(1000)
+                    await page.keyboard.press("Enter")
 
-            # DATE PICKER - Use selected date from session
+            # For Renewal
+            if user_data.get("application_type") == "renewal":
+                try:
+                    await page.wait_for_timeout(2000)
+                    old_passport_selectors = [
+                        "input[name='oldPassportNumber']",
+                        "input[formcontrolname='oldPassportNumber']",
+                        "input[placeholder*='Old Passport']",
+                        "input[placeholder*='Previous Passport']"
+                    ]
+                    
+                    for selector in old_passport_selectors:
+                        try:
+                            old_passport_field = await page.wait_for_selector(selector, timeout=2000)
+                            if old_passport_field:
+                                old_passport = user_data.get("old_passport_number", "")
+                                if old_passport:
+                                    await old_passport_field.fill(old_passport)
+                                    await say("✅ Filled old passport number")
+                                break
+                        except:
+                            continue
+                except Exception as e:
+                    await say(f"ℹ️ No old passport field found or error: {e}")
+
+            # DATE PICKER
             try:
-                if "appointment_date" in user_data:
-                    date_input = await page.wait_for_selector(
-                        "input[placeholder*='Date' i], input[type='text'][formcontrolname*='date' i]",
-                        timeout=5000
-                    )
-                    await date_input.click()
-                    await page.wait_for_selector(".ui-datepicker-calendar")
+                selected_date = user_data.get("selected_date")
+                if selected_date:
+                    try:
+                        date_obj = datetime.strptime(selected_date, "%Y-%m-%d")
+                        formatted_date = date_obj.strftime("%d/%m/%Y")
+                    except:
+                        formatted_date = selected_date
                     
-                    # Extract day from appointment_date (format: YYYY-MM-DD)
-                    appointment_date = user_data["appointment_date"]
-                    day = appointment_date.split("-")[2] if "-" in appointment_date else appointment_date
+                    date_input_selectors = [
+                        "input[placeholder*='Date' i]",
+                        "input[type='text'][formcontrolname*='date' i]",
+                        "input.mat-input-element[formcontrolname*='date']",
+                        "input[readonly][formcontrolname*='date']"
+                    ]
                     
-                    # Click the specific day
-                    await page.click(f"a:has-text('{int(day)}')")
-                    await say(f"✅ Selected date: {appointment_date}")
+                    date_input = None
+                    for selector in date_input_selectors:
+                        try:
+                            date_input = await page.wait_for_selector(selector, timeout=5000)
+                            if date_input:
+                                break
+                        except:
+                            continue
+                    
+                    if date_input:
+                        await date_input.fill("")
+                        await date_input.fill(formatted_date)
+                        await page.wait_for_timeout(1000)
+                        
+                        await page.evaluate('''
+                            (element) => {
+                                element.dispatchEvent(new Event('input', { bubbles: true }));
+                                element.dispatchEvent(new Event('change', { bubbles: true }));
+                                element.dispatchEvent(new Event('blur', { bubbles: true }));
+                            }
+                        ''', date_input)
+                        
+                        await say(f"✅ Selected date: {selected_date}")
+                    else:
+                        await say("⚠️ Date input not found, trying auto-selection...")
+                        try:
+                            date_input = await page.wait_for_selector(
+                                "input[placeholder*='Date' i], input[type='text'][formcontrolname*='date' i]",
+                                timeout=3000
+                            )
+                            await date_input.click()
+                            await page.wait_for_selector(".ui-datepicker-calendar", timeout=3000)
+                            first_date = await page.wait_for_selector(
+                                "td:not(.ui-datepicker-other-month):not(.ui-state-disabled) a",
+                                timeout=3000
+                            )
+                            await first_date.click()
+                            await say("✅ Date auto-selected.")
+                        except:
+                            await say("⚠️ Could not auto-select date")
                 else:
-                    # Fallback to auto-selecting first available date
-                    date_input = await page.wait_for_selector(
-                        "input[placeholder*='Date' i], input[type='text'][formcontrolname*='date' i]",
-                        timeout=5000
-                    )
-                    await date_input.click()
-                    await page.wait_for_selector(".ui-datepicker-calendar")
-                    first_date = await page.wait_for_selector(
-                        "td:not(.ui-datepicker-other-month):not(.ui-state-disabled) a"
-                    )
-                    await first_date.click()
-                    await say("📅 Date auto-selected.")
+                    try:
+                        date_input = await page.wait_for_selector(
+                            "input[placeholder*='Date' i], input[type='text'][formcontrolname*='date' i]",
+                            timeout=5000
+                        )
+                        await date_input.click()
+                        await page.wait_for_selector(".ui-datepicker-calendar", timeout=3000)
+                        first_date = await page.wait_for_selector(
+                            "td:not(.ui-datepicker-other-month):not(.ui-state-disabled) a",
+                            timeout=3000
+                        )
+                        await first_date.click()
+                        await say("✅ Date auto-selected.")
+                    except Exception as e:
+                        await say(f"⚠️ Date auto-selection error: {e}")
             except Exception as e:
                 await say(f"⚠️ Date selection error: {e}")
 
-            # TIME SLOT - Use selected time from session
-            await page.wait_for_selector(".ui-datepicker-calendar-container mat-chip-list", timeout=10000)
-            
-            if "appointment_time" in user_data:
-                chips = await page.query_selector_all("mat-chip.mat-chip:not(.mat-chip-disabled)")
-                time_selected = False
-                target_time = user_data["appointment_time"]
-                
-                for chip in chips:
-                    chip_text = await chip.inner_text()
-                    if target_time.lower() in chip_text.lower():
-                        await chip.click()
-                        await say(f"✅ Selected time slot: {target_time}")
-                        time_selected = True
-                        break
-                
-                if not time_selected and chips:
-                    await chips[0].click()
-                    await say(f"⚠️ Could not find exact time '{target_time}', selected first available slot")
-            else:
-                # Fallback to selecting first available slot
-                slots = await page.query_selector_all("mat-chip.mat-chip:not(.mat-chip-disabled)")
-                if slots:
-                    await slots[0].click()
-                    await say("⏰ Time slot auto-selected.")
+            # TIME SLOT
+            try:
+                selected_time = user_data.get("selected_time")
+                if selected_time:
+                    await page.wait_for_selector(".ui-datepicker-calendar-container mat-chip-list", timeout=5000)
+                    
+                    time_chip_selectors = [
+                        f"mat-chip:has-text('{selected_time}')",
+                        f"mat-chip .mat-chip-ripple:has-text('{selected_time}')",
+                        f"mat-chip:contains('{selected_time}')"
+                    ]
+                    
+                    time_selected = False
+                    for selector in time_chip_selectors:
+                        try:
+                            time_chip = await page.wait_for_selector(selector, timeout=2000)
+                            if time_chip:
+                                await time_chip.click()
+                                await say(f"✅ Selected time slot: {selected_time}")
+                                time_selected = True
+                                break
+                        except:
+                            continue
+                    
+                    if not time_selected:
+                        slots = await page.query_selector_all("mat-chip.mat-chip:not(.mat-chip-disabled)")
+                        if slots:
+                            await slots[0].click()
+                            await say("✅ Time slot auto-selected (fallback).")
+                        else:
+                            await say("⚠️ No time slots available.")
+                else:
+                    await page.wait_for_selector(".ui-datepicker-calendar-container mat-chip-list", timeout=5000)
+                    slots = await page.query_selector_all("mat-chip.mat-chip:not(.mat-chip-disabled)")
+                    if slots:
+                        await slots[0].click()
+                        await say("✅ Time slot auto-selected.")
+                    else:
+                        await say("⚠️ No time slots available.")
+            except Exception as e:
+                await say(f"⚠️ Time slot selection error: {e}")
 
             # ========== CAPTCHA HANDLING ==========
             captcha_success = False
@@ -439,10 +1129,9 @@ async def automate_passport_application(user_data, user_id, say):
                     )
                     await captcha_input.fill(captcha_text)
 
-                    # Click Next button and wait for navigation
+                    # Click Next button
                     next_btn = await page.wait_for_selector("a.btn.btn-primary", timeout=5000)
                     if next_btn:
-                        # Wait for navigation to complete after clicking Next
                         async with page.expect_navigation(timeout=10000) as navigation_info:
                             await next_btn.click()
                         
@@ -450,54 +1139,22 @@ async def automate_passport_application(user_data, user_id, say):
                         await say(f"✅ Captcha solved successfully on attempt {attempt}. Moving to next page...")
                         captcha_success = True
                         
-                        # Wait for the next page to load
                         await page.wait_for_timeout(3000)
                         
-                        # ========== FILL ALL FORMS ON NEXT PAGES ==========
-                        try:
-                            # Fill personal information
-                            personal_success = await fill_personal_information(page, user_data, user_id, say)
-                            if not personal_success:
-                                return False, "Failed to fill personal information"
-                            
-                            # Try to find and click Next button for address page
-                            next_buttons = await page.query_selector_all("button:has-text('Next'), button[type='submit']")
-                            if next_buttons:
-                                async with page.expect_navigation(timeout=10000):
-                                    await next_buttons[0].click()
-                                await page.wait_for_timeout(2000)
-                                
-                                # Fill address information
-                                address_success = await fill_address_information(page, user_data, user_id, say)
-                                if not address_success:
-                                    return False, "Failed to fill address information"
-                                
-                                # Try to find and click Next button for family page
-                                next_buttons = await page.query_selector_all("button:has-text('Next'), button[type='submit']")
-                                if next_buttons:
-                                    async with page.expect_navigation(timeout=10000):
-                                        await next_buttons[0].click()
-                                    await page.wait_for_timeout(2000)
-                                    
-                                    # Fill family information
-                                    family_success = await fill_family_information(page, user_data, user_id, say)
-                                    if not family_success:
-                                        return False, "Failed to fill family information"
-                            
-                            await say("🎉 All forms filled successfully!")
+                        # Continue with next page automation
+                        next_page_success = await handle_next_page(page, user_data, user_id, say)
+                        
+                        if next_page_success:
+                            await say(f"🎉 Full automation completed successfully for <@{user_id}>!")
                             return True, "Full passport application automation completed successfully!"
-                            
-                        except Exception as e:
-                            await say(f"⚠️ Error during form filling: {e}")
-                            # Continue even if form filling has issues
-                            return True, f"Application submitted with minor issues: {str(e)}"
+                        else:
+                            return False, "Failed to complete forms on next pages"
                         
                         break
 
                 except PlaywrightTimeoutError:
                     await say(f"❌ Captcha attempt {attempt} failed (timeout). Handling failure...")
                     
-                    # Handle the captcha failure with Close button
                     failure_handled = await handle_captcha_failure(page, say, attempt)
                     
                     if not failure_handled:
@@ -507,7 +1164,6 @@ async def automate_passport_application(user_data, user_id, say):
                 except Exception as e:
                     await say(f"❌ Captcha attempt {attempt} error: {e}")
                     
-                    # Try to handle failure even for other errors
                     try:
                         await handle_captcha_failure(page, say, attempt)
                     except:
@@ -523,7 +1179,7 @@ async def automate_passport_application(user_data, user_id, say):
                 waiting_room_text = await page.query_selector("text=waiting room")
                 if waiting_room_text:
                     await say(f"⏳ Waiting room detected. Will retry in 5 minutes <@{user_id}>.")
-                    await asyncio.sleep(300)  # Wait 5 minutes
+                    await asyncio.sleep(300)
                     return await automate_passport_application(user_data, user_id, say)
             except:
                 pass
@@ -535,67 +1191,96 @@ async def automate_passport_application(user_data, user_id, say):
         finally:
             await browser.close()
 
-# ================= Supabase Helper Functions =================
-# Note: You'll need to import your actual supabase_helper functions
-# For now, I'll create placeholder functions
 
-def get_available_dates(district, office):
-    """Get available dates for a district from Supabase"""
-    # TODO: Implement actual Supabase query
-    # This is a placeholder - replace with actual implementation
-    from datetime import datetime, timedelta
-    
-    # Generate some sample dates for demonstration
-    sample_dates = []
-    today = datetime.now()
-    for i in range(1, 8):
-        date = today + timedelta(days=i)
-        sample_dates.append(date.strftime("%Y-%m-%d"))
-    
-    return sample_dates
-
-def get_available_times(district, date):
-    """Get available time slots for a district and date from Supabase"""
-    # TODO: Implement actual Supabase query
-    # This is a placeholder - replace with actual implementation
-    
-    sample_times = [
-        {"name": "09:00 AM - 10:00 AM", "normal_capacity": 5, "vip_capacity": 2},
-        {"name": "10:00 AM - 11:00 AM", "normal_capacity": 3, "vip_capacity": 1},
-        {"name": "11:00 AM - 12:00 PM", "normal_capacity": 4, "vip_capacity": 1},
-        {"name": "01:00 PM - 02:00 PM", "normal_capacity": 6, "vip_capacity": 3},
-        {"name": "02:00 PM - 03:00 PM", "normal_capacity": 2, "vip_capacity": 1},
-    ]
-    
-    return sample_times
+# ================= District Offices =================
+DISTRICT_OFFICES = {
+    "Kathmandu": ["DAO Kathmandu", "Department of Passport"],
+    "Lalitpur": ["Lalitpur"],
+    "Bhaktapur": ["Bhaktapur"],
+    "Kaski": ["Kaski"],
+    "Morang": ["Morang"],
+    "Jhapa": ["Jhapa"],
+    "Rupandehi": ["Rupandehi"],
+    "Sunsari": ["Sunsari"],
+    "Banke": ["Banke"],
+    "Bardiya": ["Bardiya"],
+}
 
 # ================= Conversation Flow =================
+# Update questions to include all new fields
 QUESTIONS_PRE_CAPTCHA = [
+    ("application_type", "What type of application?\n1. First Issuance (New Passport)\n2. Passport Renewal\nPlease type '1' or '2':"),
     ("passport_type", "What type of passport do you want? (Regular/Diplomatic/Official)"),
-    ("province", "Which province? (Bagmati, Gandaki, Karnali, Lumbini, Sudurpashchim, Province 1, Province 2)"),
+    ("province", "Which province? (e.g., Bagmati, Gandaki, Koshi)"),
     ("district", "Which district?"),
     ("office", "Which office?"),
 ]
 
-QUESTIONS_PERSONAL_INFO = [
-    ("first_name", "What is your first name?"),
-    ("middle_name", "What is your middle name? Type '_' if none."),
-    ("last_name", "What is your last name?"),
-    ("email", "What is your email address?"),
-    ("phone", "What is your phone number?"),
-    ("citizenship_number", "What is your citizenship number?"),
-    ("dob", "What is your date of birth? (YYYY-MM-DD)"),
-    ("gender", "What is your gender? (Male/Female/Other)"),
-    ("marital_status", "What is your marital status? (Married/Unmarried)"),
+# Additional questions for renewal
+QUESTIONS_RENEWAL = [
+    ("old_passport_number", "What is your old passport number?"),
+    ("currentTDNum", "What is your current Travel Document (TD) number?"),
+    ("currentTDIssueDate", "When was your current TD issued? (YYYY-MM-DD)"),
+    ("currenttdIssuePlaceDistrict", "Which district was your current TD issued in?"),
 ]
 
-# Additional questions for address and family info (optional)
-QUESTIONS_ADDITIONAL = [
-    ("permanent_municipality", "What is your permanent municipality?"),
-    ("permanent_ward", "What is your permanent ward number?"),
-    ("permanent_tole", "What is your permanent tole?"),
-    ("father_name", "What is your father's full name?"),
-    ("mother_name", "What is your mother's full name?"),
+# Updated questions for demographic information
+QUESTIONS_DEMOGRAPHIC = [
+    ("first_name", "What is your first name?"),
+    ("last_name", "What is your last name?"),
+    ("gender", "What is your gender? (Male/Female/Other)"),
+    ("date_of_birth_ad", "What is your date of birth in AD? (YYYY-MM-DD)"),
+    ("date_of_birth_bs", "What is your date of birth in Nepali (BS)? (YYYY-MM-DD format)"),
+    ("birth_district", "What is your birth district?"),
+    ("father_first_name", "What is your father's first name?"),
+    ("father_last_name", "What is your father's last name?"),
+    ("mother_first_name", "What is your mother's first name?"),
+    ("mother_last_name", "What is your mother's last name?"),
+    ("marital_status", "What is your marital status? (Single/Married/Divorced/Widowed)"),
+    ("education", "What is your education level? (e.g., Bachelor, Master, High School)"),
+]
+
+# Questions for citizenship information
+QUESTIONS_CITIZENSHIP = [
+    ("nin", "What is your National Identity Number (NIN)?"),
+    ("citizen_number", "What is your citizenship certificate number?"),
+    ("citizen_issue_date_bs", "When was your citizenship issued (BS)? (YYYY-MM-DD)"),
+    ("citizen_issue_place_district", "Which district was your citizenship issued in?"),
+]
+
+# Questions for contact information  
+QUESTIONS_CONTACT = [
+    ("email", "What is your email address?"),
+    ("mobile", "What is your mobile number?"),
+    ("home_phone", "What is your home phone number? (optional)"),
+    ("main_address_street", "What is your main address (street/village)?"),
+    ("main_ward", "What is your main address ward number?"),
+    ("main_province", "What is your main address province?"),
+    ("main_district", "What is your main address district?"),
+    ("main_municipality", "What is your main address municipality?"),
+]
+
+# Questions for emergency contact
+QUESTIONS_EMERGENCY = [
+    ("contact_first_name", "Emergency contact: First name?"),
+    ("contact_last_name", "Emergency contact: Last name?"),
+    ("contact_house_number", "Emergency contact: House number?"),
+    ("contact_street", "Emergency contact: Street/Village?"),
+    ("contact_ward", "Emergency contact: Ward number?"),
+    ("contact_province", "Emergency contact: Province?"),
+    ("contact_district", "Emergency contact: District?"),
+    ("contact_municipality", "Emergency contact: Municipality?"),
+    ("contact_phone", "Emergency contact: Phone number?"),
+]
+
+# Combine all question phases in order
+QUESTION_PHASES = [
+    ("pre_captcha", QUESTIONS_PRE_CAPTCHA),
+    ("renewal_info", QUESTIONS_RENEWAL),
+    ("demographic_info", QUESTIONS_DEMOGRAPHIC),
+    ("citizenship_info", QUESTIONS_CITIZENSHIP),
+    ("contact_info", QUESTIONS_CONTACT),
+    ("emergency_info", QUESTIONS_EMERGENCY),
 ]
 
 # ================= Slack Event Handler =================
@@ -609,9 +1294,11 @@ async def handle_dm(event, say):
     # Initialize session
     if user_id not in user_sessions:
         user_sessions[user_id] = {
-            "data": {},
+            "data": {}, 
+            "phase_index": 0,
             "step": 0,
-            "question_phase": "pre_captcha"
+            "question_phase": "pre_captcha",
+            "additional_renewal_questions": False
         }
         await say("👋 Welcome to the Passport Automation Bot! Let's get started.")
         await say(QUESTIONS_PRE_CAPTCHA[0][1])
@@ -621,199 +1308,279 @@ async def handle_dm(event, say):
     phase = session["question_phase"]
     step = session["step"]
 
-    if phase == "pre_captcha":
-        key = QUESTIONS_PRE_CAPTCHA[step][0]
+    # Handle date selection phase
+    if phase == "date_selection":
+        # Handle date selection
+        if text.isdigit() and text in session.get("date_mapping", {}):
+            selected_date_info = session["date_mapping"][text]
+            selected_date = selected_date_info["date"]
+            formatted_date = selected_date_info["formatted_date"]
+            date_slots = selected_date_info["slots"]
+            
+            session["data"]["selected_date"] = selected_date
+            session["selected_date_slots"] = date_slots
+            
+            # Format time slots for selection
+            formatted_times, time_mapping = await format_time_slots_for_selection(date_slots)
+            
+            if formatted_times:
+                session["time_mapping"] = time_mapping
+                session["question_phase"] = "time_selection"
+                
+                message = f"""
+✅ *Date selected: {formatted_date}*
 
-        # Province fuzzy match
-        if key == "province":
-            matched = match_province(text)
-            if matched:
-                session["data"]["province"] = matched
-                session["province_districts"] = PROVINCES[matched]
-                session["step"] += 1
-                districts = PROVINCES[matched]
-                await say(f"✅ Province recognized: *{matched}*\nAvailable districts: {', '.join(districts)}\nType your district:")
-                return
+⏰ *Available time slots:*
+
+{formatted_times}
+
+Please type the number of the time slot you want to select (e.g., '1'):
+                """
+                await say(message)
             else:
-                await say("❌ Province not recognized. Try again.")
-                return
+                await say(f"❌ No time slots available for {formatted_date}.\n\nPlease select another date:")
+        else:
+            # Show dates again
+            formatted_dates, _ = await format_slots_for_date_selection(session.get("available_slots", []))
+            await say(f"""
+❌ Invalid selection. Please choose a valid date number:
 
-        # District fuzzy match
-        if key == "district":
-            province = session["data"].get("province")
-            matched = match_district(text, province)
-            if matched:
-                session["data"]["district"] = matched
-                offices = DISTRICT_OFFICES.get(matched, [])
-                session["offices_options"] = offices
+{formatted_dates}
+
+Type the number (e.g., '1'):
+            """)
+        return
+
+    # Handle time selection phase
+    elif phase == "time_selection":
+        if text.isdigit() and text in session.get("time_mapping", {}):
+            selected_time_info = session["time_mapping"][text]
+            selected_time = selected_time_info["time_slot"]
+            
+            session["data"]["selected_time"] = selected_time
+            
+            # Now ask for office selection
+            district = session["data"]["district"]
+            available_offices = await get_available_offices(district)
+            
+            if available_offices:
+                session["available_offices"] = available_offices
+                session["question_phase"] = "office_selection"
+                
+                offices_text = "\n".join(f"• {office}" for office in available_offices)
+                message = f"""
+✅ *Time slot selected: {selected_time}*
+
+🏢 *Available offices in {district}:*
+
+{offices_text}
+
+Please type the office name you want to select:
+                """
+                await say(message)
+            else:
+                await say(f"✅ Time slot selected: *{selected_time}*")
+                # Move to next question phase
+                session = await move_to_next_question_phase(session, say)
+        else:
+            formatted_times, _ = await format_time_slots_for_selection(session.get("selected_date_slots", []))
+            await say(f"""
+❌ Invalid selection. Please choose a valid time slot number:
+
+{formatted_times}
+
+Type the number (e.g., '1'):
+            """)
+        return
+
+    # Handle office selection phase
+    elif phase == "office_selection":
+        district = session["data"]["district"]
+        available_offices = session.get("available_offices", [])
+        
+        selected_office = None
+        for office in available_offices:
+            if text.lower() in office.lower() or office.lower() in text.lower():
+                selected_office = office
+                break
+        
+        if selected_office:
+            session["data"]["office"] = selected_office
+            await say(f"✅ Office selected: *{selected_office}*")
+            # Move to next question phase
+            session = await move_to_next_question_phase(session, say)
+        else:
+            offices_text = "\n".join(f"• {office}" for office in available_offices)
+            await say(f"""
+❌ Office not found. Available offices in {district}:
+{offices_text}
+
+Please type the office name exactly as shown:
+            """)
+        return
+
+    # Handle all other question phases
+    current_phase_data = None
+    for phase_name, questions in QUESTION_PHASES:
+        if phase == phase_name:
+            current_phase_data = questions
+            break
+    
+    if current_phase_data and step < len(current_phase_data):
+        key = current_phase_data[step][0]
+        
+        # Special handling for application_type
+        if key == "application_type":
+            if text == "1":
+                session["data"]["application_type"] = "first_issuance"
                 session["step"] += 1
-                if offices:
-                    options_text = "\n".join(f"{i+1}. {office}" for i, office in enumerate(offices))
-                    await say(f"✅ District recognized: *{matched}*\nAvailable offices:\n{options_text}\nType the office name or number:")
+            elif text == "2":
+                session["data"]["application_type"] = "renewal"
+                session["step"] += 1
+                session["additional_renewal_questions"] = True
+            else:
+                await say("Please type '1' for First Issuance or '2' for Passport Renewal:")
+                return
+        
+        # Special handling for district (check available slots)
+        elif key == "district":
+            district = text.title()
+            await say(f"🔍 Checking available slots for {district}...")
+            available_slots = await get_available_slots(district)
+            
+            if available_slots:
+                session["data"]["district"] = district
+                session["available_slots"] = available_slots
+                session["step"] += 1
+                
+                formatted_dates, date_mapping = await format_slots_for_date_selection(available_slots)
+                
+                if formatted_dates:
+                    session["date_mapping"] = date_mapping
+                    session["question_phase"] = "date_selection"
+                    
+                    message = f"""
+📅 *Available dates for {district}:*
+
+{formatted_dates}
+
+Please type the number of the date you want to select (e.g., '1'):
+                    """
+                    await say(message)
                 else:
-                    await say(f"✅ District recognized: *{matched}*\nNo specific offices found. Please type the office name:")
-                return
+                    await say(f"❌ No available dates found for {district}.\n\nPlease try another district:")
             else:
-                await say("❌ District not recognized. Type again.")
-                return
-
-        # Office handling
-        if key == "office" and "offices_options" in session:
-            offices = session["offices_options"]
-            text_clean = text.strip()
-
-            if text_clean.isdigit() and 1 <= int(text_clean) <= len(offices):
-                office = offices[int(text_clean) - 1]
-            else:
-                matches = [o for o in offices if o.lower() == text_clean.lower()]
-                if not matches:
-                    await say("❌ Invalid office. Choose from the list.")
-                    return
-                office = matches[0]
-
-            session["data"]["office"] = office
-
-            # 🔍 Fetch dates from Supabase
-            dates = get_available_dates(session["data"]["district"], office)
-
-            if not dates:
-                await say("❌ No available dates for this district.")
-                return
-
-            session["available_dates"] = dates
-            session["question_phase"] = "date_selection"
-
-            options = "\n".join(f"{i+1}. {d}" for i, d in enumerate(dates))
-            await say(
-                "📅 *Available Dates:*\n"
-                f"{options}\n\n"
-                "Reply with date number:"
-            )
+                await say(f"❌ No available slots found for {district}.\n\nPlease try another district:")
             return
-
-        # Passport type or other fields
+        
+        # Normal field handling
         else:
             session["data"][key] = text
             session["step"] += 1
-
-        # Move to personal info (old flow - kept for backward compatibility)
-        if session["step"] >= len(QUESTIONS_PRE_CAPTCHA):
-            session["question_phase"] = "personal_info"
-            session["step"] = 0
-            await say("✅ Basic info collected. Now your personal details.")
-            await say(QUESTIONS_PERSONAL_INFO[0][1])
-        else:
-            next_question = QUESTIONS_PRE_CAPTCHA[session["step"]][1]
-            await say(next_question)
-
-    elif phase == "date_selection":
-        dates = session.get("available_dates", [])
-
-        if not text.isdigit() or not (1 <= int(text) <= len(dates)):
-            await say("❌ Choose a valid date number.")
-            return
-
-        selected_date = dates[int(text) - 1]
-        session["data"]["appointment_date"] = selected_date
-
-        # 🔍 Fetch time slots from Supabase
-        times = get_available_times(
-            session["data"]["district"],
-            selected_date
-        )
-
-        if not times:
-            await say("❌ No time slots available for this date.")
-            return
-
-        session["available_times"] = times
-        session["question_phase"] = "time_selection"
-
-        options = []
-        for i, t in enumerate(times):
-            options.append(
-                f"{i+1}. {t['name']} "
-                f"(Normal: {t['normal_capacity']}, VIP: {t['vip_capacity']})"
-            )
-
-        await say(
-            "⏰ *Available Time Slots:*\n" +
-            "\n".join(options) +
-            "\n\nReply with time number:"
-        )
-
-    elif phase == "time_selection":
-        times = session.get("available_times", [])
-
-        if not text.isdigit() or not (1 <= int(text) <= len(times)):
-            await say("❌ Choose a valid time slot number.")
-            return
-
-        selected = times[int(text) - 1]
-        session["data"]["appointment_time"] = selected["name"]
-
-        await say(
-            f"✅ Selected:\n"
-            f"📅 Date: *{session['data']['appointment_date']}*\n"
-            f"⏰ Time: *{selected['name']}*"
-        )
-
-        # Move to personal info
-        session["question_phase"] = "personal_info"
-        session["step"] = 0
-        await say(QUESTIONS_PERSONAL_INFO[0][1])
-
-    elif phase == "personal_info":
-        key = QUESTIONS_PERSONAL_INFO[step][0]
-        # Optional middle name
-        if key == "middle_name" and text.strip() == "_":
-            session["data"][key] = ""
-        else:
-            session["data"][key] = text.strip()
-        session["step"] += 1
-
-        if session["step"] >= len(QUESTIONS_PERSONAL_INFO):
-            # Ask optional additional questions
-            session["question_phase"] = "additional_info"
-            session["step"] = 0
-            await say("✅ Personal info collected. Would you like to provide additional information? (Yes/No)")
-        else:
-            await say(QUESTIONS_PERSONAL_INFO[session["step"]][1])
-    
-    elif phase == "additional_info":
-        if text.lower() == "yes":
-            await say("Great! Let's collect some additional information.")
-            session["question_phase"] = "additional_details"
-            session["step"] = 0
-            await say(QUESTIONS_ADDITIONAL[0][1])
-        elif text.lower() == "no":
-            await say("✅ All information collected. Starting automation...")
-            success, message = await automate_passport_application(session["data"], user_id, say)
-            if success:
-                await say(f"🎉 Automation completed successfully for <@{user_id}>!")
-            else:
-                await say(f"❌ Automation failed: {message}")
-            del user_sessions[user_id]
-        else:
-            await say("Please answer Yes or No.")
-    
-    elif phase == "additional_details":
-        key = QUESTIONS_ADDITIONAL[step][0]
-        session["data"][key] = text.strip()
-        session["step"] += 1
         
-        if session["step"] >= len(QUESTIONS_ADDITIONAL):
-            await say("✅ All information collected. Starting automation...")
-            success, message = await automate_passport_application(session["data"], user_id, say)
-            if success:
-                await say(f"🎉 Automation completed successfully for <@{user_id}>!")
-            else:
-                await say(f"❌ Automation failed: {message}")
-            del user_sessions[user_id]
+        # Check if current phase is complete
+        if session["step"] >= len(current_phase_data):
+            # Move to next phase
+            session = await move_to_next_question_phase(session, say)
         else:
-            await say(QUESTIONS_ADDITIONAL[session["step"]][1])
+            # Ask next question in current phase
+            next_question = current_phase_data[session["step"]][1]
+            await say(next_question)
+    
+    # Update session
+    user_sessions[user_id] = session
 
-# ================= Start Bot =================
+
+async def move_to_next_question_phase(session, say):
+    """Move to the next question phase"""
+    current_phase_index = -1
+    for i, (phase_name, _) in enumerate(QUESTION_PHASES):
+        if session["question_phase"] == phase_name:
+            current_phase_index = i
+            break
+    
+    # Check if we should skip renewal questions
+    if session["question_phase"] == "pre_captcha":
+        if not session.get("additional_renewal_questions"):
+            # Skip renewal questions
+            current_phase_index += 1
+    
+    # Move to next phase
+    next_phase_index = current_phase_index + 1
+    
+    if next_phase_index < len(QUESTION_PHASES):
+        next_phase_name, next_phase_questions = QUESTION_PHASES[next_phase_index]
+        session["question_phase"] = next_phase_name
+        session["step"] = 0
+        
+        # Announce new phase
+        phase_titles = {
+            "demographic_info": "📋 *Personal Information:*",
+            "citizenship_info": "🆔 *Citizenship Information:*",
+            "contact_info": "📱 *Contact Information:*",
+            "emergency_info": "🆘 *Emergency Contact Information:*"
+        }
+        
+        if next_phase_name in phase_titles:
+            await say(phase_titles[next_phase_name])
+        
+        # Ask first question of new phase
+        await say(next_phase_questions[0][1])
+    else:
+        # All questions completed, start automation
+        await start_automation(session, say)
+    
+    return session
+
+
+async def start_automation(session, say):
+    """Start the automation process after all questions are answered"""
+    user_id = None
+    for uid, sess in user_sessions.items():
+        if sess == session:
+            user_id = uid
+            break
+    
+    if not user_id:
+        await say("❌ Error: Could not find user session")
+        return
+    
+    # Create summary
+    app_type = session["data"].get("application_type", "first_issuance")
+    district = session["data"].get("district", "Unknown")
+    office = session["data"].get("office", "Unknown")
+    selected_date = session["data"].get("selected_date", "Auto-select")
+    selected_time = session["data"].get("selected_time", "Auto-select")
+    
+    summary = f"""
+📋 *Application Summary:*
+• Type: {'Renewal' if app_type == 'renewal' else 'First Issuance'}
+• District: {district}
+• Office: {office}
+• Date: {selected_date}
+• Time: {selected_time}
+• Name: {session['data'].get('first_name', '')} {session['data'].get('last_name', '')}
+    """
+    
+    await say(summary)
+    
+    if app_type == "renewal":
+        await say("🔄 *Starting automated passport RENEWAL process...*\nI'll book your selected appointment. This may take a few minutes.")
+    else:
+        await say("🔄 *Starting automated NEW PASSPORT application...*\nI'll book your selected appointment. This may take a few minutes.")
+    
+    success, message = await automate_passport_application(session["data"], user_id, say)
+    if success:
+        await say(f"🎉 *Automation completed successfully for <@{user_id}>!*")
+    else:
+        await say(f"❌ *Automation failed:* {message}")
+    
+    # Clean up session
+    if user_id in user_sessions:
+        del user_sessions[user_id]
+
+
+# ================= Start the Bot =================
 if __name__ == "__main__":
     async def main():
         handler = AsyncSocketModeHandler(app, os.environ.get("SLACK_APP_TOKEN"))

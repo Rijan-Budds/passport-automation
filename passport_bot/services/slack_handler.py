@@ -83,6 +83,11 @@ class SlackHandler:
             else:
                 await say("Please type '1' for First Issuance or '2' for Passport Renewal:")
         
+        elif key == "passport_type":
+            session.update("passport_type", text.title())
+            session.step += 1
+            await say(QUESTIONS_PRE_CAPTCHA[session.step][1])
+        
         elif key == "province":
             session.update("province", text.title())
             session.step += 1
@@ -113,11 +118,6 @@ Please type the number of the date you want to select (e.g., '1'):
                     await say(f"❌ No available dates found for {district}.\n\nPlease try another district:")
             else:
                 await say(f"❌ No available slots found for {district}.\n\nPlease try another district:")
-        
-        elif key == "passport_type":
-            session.update("passport_type", text.title())
-            session.step += 1
-            await say(QUESTIONS_PRE_CAPTCHA[session.step][1])
     
     async def handle_date_selection(self, session, text, say):
         """Handle date selection"""

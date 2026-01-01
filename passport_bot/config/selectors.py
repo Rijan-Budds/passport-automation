@@ -1,9 +1,9 @@
 # CSS Selectors for Nepal Passport Website
 SELECTORS = {
-    # Initial Page
-    "first_issuance_button": "text=First Issuance",
-    "renewal_button": "text=Passport Renewal",
-    "passport_type_regular": "label.main-doc-types:has-text('Regular')",
+    # Initial Page - Application Type Selection
+    "first_issuance_button": "div.iups-service-box:has-text('First Issuance')",
+    "renewal_button": "div.iups-service-box:has-text('Renewal')",
+    "passport_type_regular": "label.main-doc-types:has-text('Ordinary 34 pages')",
     "passport_type_diplomatic": "label.main-doc-types:has-text('Diplomatic')",
     "passport_type_official": "label.main-doc-types:has-text('Official')",
     "proceed_button": "text=Proceed",
