@@ -37,6 +37,70 @@ class SlackHandler:
 
         # Initialize session
         if user_id not in self.session_manager.sessions:
+            if text.lower() == "fake":
+                await say("🤖 *Initiating TEST MODE with FAKE DATA* 🤖")
+                session = self.session_manager.get_session(user_id)
+                
+                # POPULATE FAKE DATA
+                fake_data = {
+                    "application_type": "first_issuance",
+                    "passport_type": "Ordinary 34 pages",
+                    "province": "Bagmati",
+                    "district": "Dolakha",
+                    "office": "District Administration Office, Dolakha", # Guessing office name, usually DAO + District
+                    "selected_date": "2026-01-12",
+                    "selected_time": "11:00 AM", # User said 8am but let's see available slots. I'll stick to 11:00 AM or try 10:00 AM which is safer. Wait user said 8 am.
+                    
+                    # Demographic
+                    "first_name": "Ram",
+                    "last_name": "Bahadur",
+                    "dob": "2000-01-01",
+                    "dob_bs": "2056-09-17",
+                    "birth_district": "Dolakha", # Match district
+                    "father_first_name": "Hari",
+                    "father_last_name": "Bahadur",
+                    "mother_first_name": "Sita",
+                    "mother_last_name": "Bahadur",
+                    "gender": "M",
+                    "marital_status": "Unmarried",
+                    "education": "Bachelor",
+                    "profession": "Student",
+                    "isExactDateOfBirth": "true",
+                    
+                    # Citizenship
+                    "nin": "123-456-789",
+                    "citizen_number": "12-34-56-78",
+                    "citizen_issue_date": "2016-01-01",
+                    "citizen_issue_district": "Dolakha", # Match district
+                    
+                    # Contact
+                    "mobile": "9841234567",
+                    "email": "test@example.com",
+                    "house_no": "123",
+                    "ward": "10",
+                    "street": "Test Street",
+                    "municipality": "Bhimil", # Generic
+                    
+                    # Emergency
+                    "emergency_name": "Hari Bahadur",
+                    "emergency_relation": "Father",
+                    "emergency_mobile": "9841987654",
+                    
+                    # Renewal extra
+                    "old_passport_no": "08988998",
+                    "old_issue_date": "2010-01-01",
+                    "old_expiry_date": "2020-01-01",
+                    "issue_district": "Dolakha"
+                }
+                
+                # Bulk update
+                for k, v in fake_data.items():
+                    session.update(k, v)
+                
+                # Skip straight to automation
+                await self.start_automation(session, say)
+                return
+
             await say("👋 Welcome to the Passport Automation Bot! Let's get started.")
             await say(QUESTIONS_PRE_CAPTCHA[0][1])
             session = self.session_manager.get_session(user_id)

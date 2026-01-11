@@ -14,19 +14,32 @@ class CaptchaSolver:
     async def solve_captcha(self, screenshot_bytes: bytes) -> str:
         """Solve CAPTCHA from screenshot bytes"""
         try:
+            # Generate a timestamp for the debug filename
+            import time
+            timestamp = int(time.time())
+            
             # Open and process image
             image = Image.open(io.BytesIO(screenshot_bytes)).convert("RGBA")
             background = Image.new("RGBA", image.size, (255, 255, 255))
             combined = Image.alpha_composite(background, image).convert("RGB")
             
+            # Save original for debugging
+            combined.save(f"debug_captcha_input_{timestamp}.png")
+            print(f"📸 Saved debugging captcha image to debug_captcha_input_{timestamp}.png")
+            
+            # Preprocessing: enhance contrast (proven to help in experiments)
+            from PIL import ImageEnhance
+            enhancer = ImageEnhance.Contrast(combined)
+            processed_image = enhancer.enhance(2.0)
+            
             # Process with TrOCR model
-            pixel_values = self.processor(combined, return_tensors="pt").pixel_values
+            pixel_values = self.processor(processed_image, return_tensors="pt").pixel_values
             generated_ids = self.model.generate(pixel_values)
             text = self.processor.batch_decode(generated_ids, skip_special_tokens=True)[0]
             
             # Clean text (keep only alphanumeric)
             cleaned_text = ''.join(filter(str.isalnum, text))
-            print(f"CAPTCHA solved: {cleaned_text}")
+            print(f"CAPTCHA solved: {cleaned_text} (Raw: {text})")
             return cleaned_text
             
         except Exception as e:

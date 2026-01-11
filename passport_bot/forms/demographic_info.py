@@ -5,32 +5,38 @@ async def demographic_information(page, user_data, user_id, say):
     try:
         await say("📝 Starting to fill demographic information form...")
         
+        # Debug: Check page content
+        try:
+            await page.screenshot(path="debug_demographic_start.png")
+            print("📸 Saved demographic page screenshot")
+        except:
+            pass
+
         # Wait for the form to be visible
-        await page.wait_for_selector("form", timeout=10000)
+        try:
+            await page.wait_for_selector("form", timeout=10000)
+        except Exception as e:
+            await say(f"⚠️ Could not find 'form' element. Page might be structured differently.")
+            # Dump page source to file for inspection
+            content = await page.content()
+            with open("debug_demographic_page.html", "w") as f:
+                f.write(content)
+            await say("📄 Saved page HTML to debug_demographic_page.html")
+            raise e
         
         # ------------------------------
-        # 1️⃣ Ask for gender if missing
+        # 1️⃣ Handle missing gender
         # ------------------------------
         if "gender" not in user_data:
-            while True:
-                gender = input("Enter your gender (M for Male, F for Female, X for Other): ").upper()
-                if gender in ["M", "F", "X"]:
-                    user_data["gender"] = gender
-                    break
-                else:
-                    print("Invalid input. Please type M, F, or X.")
+            print("⚠️ Gender not in user data, defaulting to 'M'")
+            user_data["gender"] = "M"
         
         # ------------------------------
-        # 2️⃣ Ask for exact DOB if missing
+        # 2️⃣ Handle missing exact DOB flag
         # ------------------------------
         if "isExactDateOfBirth" not in user_data:
-            while True:
-                dob_exact = input("Is your date of birth exact? (Y/N): ").upper()
-                if dob_exact in ["Y", "N"]:
-                    user_data["isExactDateOfBirth"] = "true" if dob_exact == "Y" else "false"
-                    break
-                else:
-                    print("Invalid input. Please type Y or N.")
+            print("⚠️ isExactDateOfBirth not in user data, defaulting to 'true'")
+            user_data["isExactDateOfBirth"] = "true"
         
         # ------------------------------
         # 3️⃣ Fill text inputs
@@ -58,16 +64,35 @@ async def demographic_information(page, user_data, user_id, say):
                 f"input[placeholder*='{field_name.title()}']",
                 f"input[placeholder*='{field_name}']"
             ]
+            field_filled = False
             for selector in selectors:
                 try:
-                    field = await page.wait_for_selector(selector, timeout=1000)
+                    # Increased timeout to 3s
+                    field = await page.wait_for_selector(selector, timeout=3000)
                     if field:
+                        await field.scroll_into_view_if_needed()
+                        await field.fill("") # Clear first
                         await field.fill(value)
-                        await say(f"✅ Filled {field_name}")
+                        
+                        # Trigger events for Angular
+                        await page.evaluate('''
+                            (element) => {
+                                element.dispatchEvent(new Event('input', { bubbles: true }));
+                                element.dispatchEvent(new Event('change', { bubbles: true }));
+                                element.dispatchEvent(new Event('blur', { bubbles: true }));
+                            }
+                        ''', field)
+                        
+                        print(f"✅ Filled {field_name}")
                         filled_fields += 1
+                        field_filled = True
                         break
-                except:
+                except Exception as e:
+                    # print(f"Debug: Selector {selector} failed: {e}")
                     continue
+            
+            if not field_filled:
+                print(f"⚠️ Failed to fill field: {field_name}")
         
         # ------------------------------
         # 4️⃣ Handle radio buttons

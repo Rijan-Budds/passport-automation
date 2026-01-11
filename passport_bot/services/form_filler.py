@@ -42,7 +42,7 @@ class FormFiller:
                 
                 # Take screenshot for debugging
                 await page.screenshot(path=f"debug_{user_id}_initial.png")
-                await say(f"🌐 Loaded website for <@{user_id}>")
+                print(f"🌐 Loaded website for <@{user_id}>")
 
                 # Application type selection
                 await self.select_application_type(page, user_data, say)
@@ -52,7 +52,7 @@ class FormFiller:
 
                 # Passport type - FIXED HERE
                 passport_type = user_data.get('passport_type', 'Regular')
-                await say(f"📄 Selecting passport type: {passport_type}")
+                print(f"📄 Selecting passport type: {passport_type}")
                 
                 # Map passport types to actual labels
                 passport_mapping = {
@@ -65,7 +65,7 @@ class FormFiller:
                 }
                 
                 actual_label = passport_mapping.get(passport_type, 'Ordinary 34 pages')
-                await say(f"🔍 Looking for: '{actual_label}'")
+                print(f"🔍 Looking for: '{actual_label}'")
                 
                 # Try multiple selectors to find the passport type
                 passport_selectors = [
@@ -79,7 +79,7 @@ class FormFiller:
                 passport_selected = False
                 for selector in passport_selectors:
                     try:
-                        await say(f"Trying selector: {selector}")
+                        print(f"Trying selector: {selector}")
                         if selector.startswith('//'):
                             # XPath selector
                             element = await page.wait_for_selector(f"xpath={selector}", timeout=2000)
@@ -90,11 +90,11 @@ class FormFiller:
                         if element:
                             await element.scroll_into_view_if_needed()
                             await element.click()
-                            await say(f"✅ Selected passport type: {actual_label}")
+                            print(f"✅ Selected passport type: {actual_label}")
                             passport_selected = True
                             break
                     except Exception as e:
-                        await say(f"❌ Selector failed: {str(e)[:50]}...")
+                        print(f"❌ Selector failed: {str(e)[:50]}...")
                         continue
                 
                 if not passport_selected:
@@ -103,12 +103,12 @@ class FormFiller:
                         first_type = await page.query_selector("label.main-doc-types, label.radio-label")
                         if first_type:
                             await first_type.click()
-                            await say("⚠️ Selected first available passport type (fallback)")
+                            print("⚠️ Selected first available passport type (fallback)")
                         else:
                             await say("❌ Could not find any passport type options")
                             return False, "No passport type options found"
                     except Exception as e:
-                        await say(f"❌ Fallback also failed: {e}")
+                        print(f"❌ Fallback also failed: {e}")
                         return False, f"Passport type selection failed: {e}"
                 
                 # Wait a moment for UI to update
@@ -118,7 +118,7 @@ class FormFiller:
                 await page.screenshot(path=f"debug_{user_id}_passport_selected.png")
 
                 # Proceed button with multiple selector attempts
-                await say("🔘 Looking for 'Proceed' button...")
+                print("🔘 Looking for 'Proceed' button...")
                 proceed_selectors = [
                     selectors.SELECTORS["proceed_button"],
                     "button:has-text('Proceed')",
@@ -130,7 +130,7 @@ class FormFiller:
                 proceed_clicked = False
                 for selector in proceed_selectors:
                     try:
-                        await say(f"Looking for proceed with: {selector}")
+                        print(f"Looking for proceed with: {selector}")
                         if selector.startswith('//'):
                             element = await page.wait_for_selector(f"xpath={selector}", timeout=2000)
                         else:
@@ -139,22 +139,22 @@ class FormFiller:
                         if element:
                             await element.scroll_into_view_if_needed()
                             await element.click()
-                            await say("✅ Clicked 'Proceed' button")
+                            print("✅ Clicked 'Proceed' button")
                             proceed_clicked = True
                             break
                     except Exception as e:
-                        await say(f"Proceed selector {selector} failed: {str(e)[:50]}...")
+                        print(f"Proceed selector {selector} failed: {str(e)[:50]}...")
                         continue
                 
                 if not proceed_clicked:
-                    await say("❌ Could not find 'Proceed' button")
+                    print("❌ Could not find 'Proceed' button")
                     # Try to find any button that might be proceed
                     all_buttons = await page.query_selector_all("button")
                     for button in all_buttons:
                         text = await button.text_content()
                         if text and 'proceed' in text.lower():
                             await button.click()
-                            await say("✅ Clicked proceed button (found by text content)")
+                            print("✅ Clicked proceed button (found by text content)")
                             proceed_clicked = True
                             break
                     
@@ -165,9 +165,9 @@ class FormFiller:
                 try:
                     await page.wait_for_selector("mat-dialog-container", timeout=5000)
                     await page.click(selectors.SELECTORS["agree_button"])
-                    await say("✅ Accepted consent agreement")
+                    print("✅ Accepted consent agreement")
                 except:
-                    await say("ℹ️ No consent popup found or already dismissed")
+                    print("ℹ️ No consent popup found or already dismissed")
                     pass
 
                 # Wait for appointment page
@@ -175,16 +175,18 @@ class FormFiller:
                     await page.wait_for_url("**/appointment", timeout=15000)
                     await page.wait_for_load_state('networkidle')
                     await page.wait_for_timeout(2000)
-                    await say("✅ Navigated to appointment page")
+                    print("✅ Navigated to appointment page")
                 except Exception as e:
-                    await say(f"⚠️ Could not verify appointment page: {e}")
+                    print(f"⚠️ Could not verify appointment page: {e}")
                     # Continue anyway
 
                 # Fill location dropdowns
                 await self.fill_location_dropdowns(page, user_data, say)
                 
                 # Fill date and time
-                await self.fill_appointment_datetime(page, user_data, say)
+                date_success = await self.fill_appointment_datetime(page, user_data, say)
+                if not date_success:
+                    return False, "Failed to select appointment date/time"
 
                 # Handle CAPTCHA
                 captcha_success = await self.handle_captcha(page, user_data, user_id, say)
@@ -215,16 +217,16 @@ class FormFiller:
         try:
             # Wait for page to load completely
             await page.wait_for_timeout(3000)
-            await say("🔄 Checking for application type options...")
+            print("🔄 Checking for application type options...")
             
             # First, check what the user actually selected
             # Check for different possible key names in user_data
             app_type = user_data.get("application_type") or user_data.get("type") or "first_issuance"
-            await say(f"📋 User wants: {app_type}")
+            print(f"📋 User wants: {app_type}")
             
             # Map to actual values on the website
             if app_type == "renewal" or app_type == "2" or app_type == "Passport Renewal":
-                await say("🔄 Looking for 'Renewal' option...")
+                print("🔄 Looking for 'Renewal' option...")
                 
                 # Try multiple selectors for renewal - targeting div.iups-service-box
                 renewal_selectors = [
@@ -237,7 +239,7 @@ class FormFiller:
                 renewal_selected = False
                 for selector in renewal_selectors:
                     try:
-                        await say(f"Trying renewal selector: {selector}")
+                        print(f"Trying renewal selector: {selector}")
                         if selector.startswith('//'):
                             element = await page.wait_for_selector(f"xpath={selector}", timeout=3000)
                         else:
@@ -247,7 +249,7 @@ class FormFiller:
                             await element.scroll_into_view_if_needed()
                             await page.wait_for_timeout(500)
                             await element.click()
-                            await say("✅ Selected 'Passport Renewal'")
+                            print("✅ Selected 'Passport Renewal'")
                             renewal_selected = True
                             break
                     except Exception as e:
@@ -255,13 +257,13 @@ class FormFiller:
                         continue
                 
                 if not renewal_selected:
-                    await say("⚠️ Could not find Renewal option, defaulting to First Issuance")
+                    print("⚠️ Could not find Renewal option, defaulting to First Issuance")
                     # Fall back to First Issuance
                     app_type = "first_issuance"
             
             # Select First Issuance (either user choice or fallback)
             if app_type == "first_issuance" or app_type == "1" or app_type == "First Issuance" or app_type == "new":
-                await say("🆕 Looking for 'First Issuance' option...")
+                print("🆕 Looking for 'First Issuance' option...")
                 
                 # Try multiple selectors for first issuance - targeting div.iups-service-box
                 first_issuance_selectors = [
@@ -274,7 +276,7 @@ class FormFiller:
                 first_issuance_clicked = False
                 for selector in first_issuance_selectors:
                     try:
-                        await say(f"Trying first issuance selector: {selector}")
+                        print(f"Trying first issuance selector: {selector}")
                         if selector.startswith('//'):
                             element = await page.wait_for_selector(f"xpath={selector}", timeout=3000)
                         else:
@@ -284,7 +286,7 @@ class FormFiller:
                             await element.scroll_into_view_if_needed()
                             await page.wait_for_timeout(500)
                             await element.click()
-                            await say("✅ Selected 'First Issuance'")
+                            print("✅ Selected 'First Issuance'")
                             first_issuance_clicked = True
                             break
                     except Exception as e:
@@ -293,24 +295,24 @@ class FormFiller:
                 
                 if not first_issuance_clicked:
                     # Last resort: look for div.iups-service-box elements
-                    await say("🔍 Searching for any iups-service-box elements...")
+                    print("🔍 Searching for any iups-service-box elements...")
                     service_boxes = await page.query_selector_all("div.iups-service-box")
                     if service_boxes:
-                        await say(f"Found {len(service_boxes)} service box elements")
+                        print(f"Found {len(service_boxes)} service box elements")
                         # Click the first one as fallback
                         await service_boxes[0].scroll_into_view_if_needed()
                         await page.wait_for_timeout(500)
                         await service_boxes[0].click()
-                        await say("⚠️ Clicked first service box element (fallback)")
+                        print("⚠️ Clicked first service box element (fallback)")
                     else:
-                        await say("❌ No application type options found at all!")
+                        print("❌ No application type options found at all!")
             
             # Take screenshot to debug
             await page.screenshot(path=f"debug_{int(datetime.now().timestamp())}_application_type.png")
             await page.wait_for_timeout(1000)
                 
         except Exception as e:
-            await say(f"⚠️ Error in application type selection: {e}")
+            print(f"⚠️ Error in application type selection: {e}")
             # Try to continue anyway
         
         # Add more debugging to see what's on the page
@@ -318,9 +320,9 @@ class FormFiller:
             # Check what text is visible on the page
             page_text = await page.evaluate("() => document.body.innerText")
             if len(page_text) > 500:
-                await say(f"📄 Page text (first 500 chars): {page_text[:500]}")
+                print(f"📄 Page text (first 500 chars): {page_text[:500]}")
             else:
-                await say(f"📄 Page text: {page_text}")
+                print(f"📄 Page text: {page_text}")
             
             # Look for any labels or text that might indicate the options
             all_elements = await page.query_selector_all("label, div, span, button, p")
@@ -332,20 +334,20 @@ class FormFiller:
                         text = text.strip()
                         if text and ("first" in text.lower() or "renewal" in text.lower() or "issuance" in text.lower() or "passport" in text.lower()):
                             found_options.append(text)
-                            await say(f"Found relevant element: {text[:50]}")
+                            print(f"Found relevant element: {text[:50]}")
                 except:
                     continue
             
             if found_options:
-                await say(f"📋 Found these options on page: {', '.join(found_options[:5])}")
+                print(f"📋 Found these options on page: {', '.join(found_options[:5])}")
         except Exception as e:
-            await say(f"Debug failed: {e}")
+            print(f"Debug failed: {e}")
     
     async def fill_location_dropdowns(self, page, user_data, say):
         """Fill country, province, district, office dropdowns"""
         try:
             selects = await page.query_selector_all(selectors.SELECTORS["mat_select"])
-            await say(f"Found {len(selects)} dropdowns on the page")
+            print(f"Found {len(selects)} dropdowns on the page")
             
             # Fill each dropdown
             dropdown_data = [
@@ -360,7 +362,7 @@ class FormFiller:
                     success = await self.select_dropdown_option(page, selects[i], value, field_name, say)
                     if not success and field_name == "country":
                         # For country, try a different approach
-                        await say(f"⚠️ Could not select {field_name}, trying alternative...")
+                        print(f"⚠️ Could not select {field_name}, trying alternative...")
                         country_input = await page.query_selector("input[placeholder*='Country']")
                         if country_input:
                             await country_input.fill("Nepal")
@@ -368,7 +370,7 @@ class FormFiller:
                             await page.keyboard.press("Enter")
                     await page.wait_for_timeout(2000)
         except Exception as e:
-            await say(f"⚠️ Error filling location dropdowns: {e}")
+            print(f"⚠️ Error filling location dropdowns: {e}")
     
     async def select_dropdown_option(self, page, dropdown, value, field_name, say):
         """Select an option from a dropdown"""
@@ -395,7 +397,7 @@ class FormFiller:
                     
                     if option:
                         await option.click()
-                        await say(f"✅ Selected {field_name}: {value}")
+                        print(f"✅ Selected {field_name}: {value}")
                         return True
                 except:
                     continue
@@ -404,43 +406,84 @@ class FormFiller:
             await page.keyboard.type(value[:3])
             await asyncio.sleep(1)
             await page.keyboard.press("Enter")
-            await say(f"✅ Typed and selected {field_name}: {value}")
+            print(f"✅ Typed and selected {field_name}: {value}")
             return True
             
         except Exception as e:
-            await say(f"⚠️ Could not select {field_name}: {e}")
+            print(f"⚠️ Could not select {field_name}: {e}")
             return False
     
     async def fill_appointment_datetime(self, page, user_data, say):
         """Fill appointment date and time"""
         # Date selection
-        selected_date = user_data.get("selected_date")
-        if selected_date:
-            try:
-                date_obj = datetime.strptime(selected_date, "%Y-%m-%d")
-                formatted_date = date_obj.strftime("%d/%m/%Y")
+        try:
+            date_input = await page.wait_for_selector(
+                selectors.SELECTORS["date_input"], 
+                timeout=5000
+            )
+            
+            date_filled = False
+            selected_date = user_data.get("selected_date")
+            
+            # Method 1: Try typing the date directly (if provided)
+            if selected_date:
+                try:
+                    date_obj = datetime.strptime(selected_date, "%Y-%m-%d")
+                    formatted_date = date_obj.strftime("%d/%m/%Y")
+                    
+                    if date_input:
+                        await date_input.click() # Ensure calendar opens or field is focused
+                        await asyncio.sleep(0.5)
+                        
+                        # Clear and type
+                        await date_input.fill("")
+                        await date_input.fill(formatted_date)
+                        await asyncio.sleep(1)
+                        
+                        # Trigger events
+                        await page.evaluate('''
+                            (element) => {
+                                element.dispatchEvent(new Event('input', { bubbles: true }));
+                                element.dispatchEvent(new Event('change', { bubbles: true }));
+                                element.dispatchEvent(new Event('blur', { bubbles: true }));
+                            }
+                        ''', date_input)
+                        
+                        print(f"✅ Typed date: {selected_date}")
+                        date_filled = True
+                except Exception as e:
+                    print(f"⚠️ Text date selection failed: {e}")
+            
+            # Method 2: Click on the closest available date
+            # This runs if Method 1 didn't happen or we want to ensure a valid date is picked
+            if not date_filled: 
+                print("📅 Trying to click closest available date...")
                 
-                date_input = await page.wait_for_selector(
-                    selectors.SELECTORS["date_input"], 
-                    timeout=5000
-                )
-                if date_input:
-                    await date_input.fill("")
-                    await date_input.fill(formatted_date)
-                    await asyncio.sleep(1)
+                # Make sure calendar is visible
+                try:
+                    await date_input.click()
+                    await page.wait_for_selector(selectors.SELECTORS["date_picker_calendar"], timeout=3000)
+                except:
+                    print("⚠️ Calendar did not pop up, trying to find available dates anyway...")
+
+                # Find available dates
+                # Using the selector from selectors.py: "td:not(.ui-datepicker-other-month):not(.ui-state-disabled) a"
+                available_dates = await page.query_selector_all(selectors.SELECTORS["available_date"])
+                
+                if available_dates:
+                    # Click the first one (closest date)
+                    await available_dates[0].click()
+                    print("✅ Clicked the closest available date in the calendar.")
+                    date_filled = True
+                else:
+                    print("❌ No available dates found in the calendar!")
                     
-                    # Trigger events
-                    await page.evaluate('''
-                        (element) => {
-                            element.dispatchEvent(new Event('input', { bubbles: true }));
-                            element.dispatchEvent(new Event('change', { bubbles: true }));
-                            element.dispatchEvent(new Event('blur', { bubbles: true }));
-                        }
-                    ''', date_input)
-                    
-                    await say(f"✅ Selected date: {selected_date}")
-            except Exception as e:
-                await say(f"⚠️ Date selection error: {e}")
+        except Exception as e:
+            print(f"⚠️ Date selection error: {e}")
+            
+        if not date_filled:
+            print("❌ Date passed but was not filled!")
+            return False
         
         # Time selection
         selected_time = user_data.get("selected_time")
@@ -468,8 +511,8 @@ class FormFiller:
                         
                         if time_chip:
                             await time_chip.click()
-                            await say(f"✅ Selected time slot: {selected_time}")
-                            return
+                            print(f"✅ Selected time slot: {selected_time}")
+                            return True
                     except:
                         continue
                 
@@ -477,10 +520,13 @@ class FormFiller:
                 slots = await page.query_selector_all(selectors.SELECTORS["time_slot"])
                 if slots:
                     await slots[0].click()
-                    await say("✅ Time slot auto-selected (fallback).")
+                    print("✅ Time slot auto-selected (fallback).")
                     
             except Exception as e:
-                await say(f"⚠️ Time slot selection error: {e}")
+                print(f"⚠️ Time slot selection error: {e}")
+                return False
+        
+        return True
     
     async def handle_captcha(self, page, user_data, user_id, say):
         """Handle CAPTCHA solving with retries"""
@@ -488,7 +534,7 @@ class FormFiller:
         
         for attempt in range(1, MAX_CAPTCHA_ATTEMPTS + 1):
             try:
-                await say(f"🔄 Attempt {attempt}/{MAX_CAPTCHA_ATTEMPTS}: Solving captcha...")
+                print(f"🔄 Attempt {attempt}/{MAX_CAPTCHA_ATTEMPTS}: Solving captcha...")
                 
                 # Get captcha image (increased timeout)
                 captcha_img = await page.wait_for_selector(
@@ -498,7 +544,7 @@ class FormFiller:
                 screenshot_bytes = await captcha_img.screenshot()
                 captcha_text = await self.captcha_solver.solve_captcha(screenshot_bytes)
 
-                await say(f"🔤 Captcha text detected: {captcha_text}")
+                print(f"🔤 Captcha text detected: {captcha_text}")
 
                 # Fill captcha input (increased timeout)
                 captcha_input = await page.wait_for_selector(
@@ -518,15 +564,18 @@ class FormFiller:
                         await next_btn.click()
                     
                     await navigation_info.value
-                    await say(f"✅ Captcha solved successfully on attempt {attempt}.")
+                    if attempt > 1:
+                       await say(f"✅ Captcha solved successfully on attempt {attempt}.")
+                    else:
+                       print(f"✅ Captcha solved successfully on attempt {attempt}.")
                     return True
 
             except PlaywrightTimeoutError:
-                await say(f"❌ Captcha attempt {attempt} failed (timeout).")
+                print(f"❌ Captcha attempt {attempt} failed (timeout).")
                 await self.handle_captcha_failure(page, say, attempt)
                 
             except Exception as e:
-                await say(f"❌ Captcha attempt {attempt} error: {e}")
+                print(f"❌ Captcha attempt {attempt} error: {e}")
                 await self.handle_captcha_failure(page, say, attempt)
             
             await asyncio.sleep(2)
@@ -553,7 +602,7 @@ class FormFiller:
                     
                     if close_btn:
                         await close_btn.click()
-                        await say("✅ Closed the error dialog.")
+                        print("✅ Closed the error dialog.")
                         await asyncio.sleep(2)
                         break
                 except:
@@ -575,31 +624,31 @@ class FormFiller:
                     
                     if reload_btn:
                         await reload_btn.click()
-                        await say("🔄 Captcha reloaded.")
+                        print("🔄 Captcha reloaded.")
                         await asyncio.sleep(2)
                         break
                 except:
                     continue
                     
         except Exception as e:
-            await say(f"❌ Error handling captcha failure: {e}")
+            print(f"❌ Error handling captcha failure: {e}")
     
     async def handle_next_page(self, page, user_data, user_id, say):
         """Handle forms on the next page after CAPTCHA"""
         try:
             await asyncio.sleep(3000)
-            await say(f"🔗 Now on page: {page.url}")
+            print(f"🔗 Now on page: {page.url}")
             
             # Check for renewal fields
             is_renewal = user_data.get("application_type") == "renewal"
             if is_renewal:
-                await say("🔄 This is a renewal application...")
+                print("🔄 This is a renewal application...")
                 renewal_success = await fill_renewal_information(page, user_data, user_id, say)
                 if not renewal_success:
-                    await say("⚠️ Could not fill all renewal information, but continuing...")
+                    print("⚠️ Could not fill all renewal information, but continuing...")
             
             # FILL DEMOGRAPHIC INFORMATION (Personal Info)
-            await say("👤 Starting to fill demographic information...")
+            print("👤 Starting to fill demographic information...")
             demographic_success = await demographic_information(page, user_data, user_id, say)
             if not demographic_success:
                 return False
@@ -610,10 +659,10 @@ class FormFiller:
                 async with page.expect_navigation(timeout=15000) as navigation_info:
                     await next_btn.click()
                 await navigation_info.value
-                await say("✅ Moved to citizenship information page!")
+                print("✅ Moved to citizenship information page!")
                 
                 # FILL CITIZEN INFORMATION
-                await say("📄 Filling citizenship information...")
+                print("📄 Filling citizenship information...")
                 citizen_success = await citizen_information(page, user_data, user_id, say)
                 if not citizen_success:
                     return False
@@ -624,10 +673,10 @@ class FormFiller:
                     async with page.expect_navigation(timeout=15000) as navigation_info:
                         await next_btn.click()
                     await navigation_info.value
-                    await say("✅ Moved to contact information page!")
+                    print("✅ Moved to contact information page!")
                     
                     # FILL CONTACT INFORMATION
-                    await say("📱 Filling contact information...")
+                    print("📱 Filling contact information...")
                     contact_success = await contact_information(page, user_data, user_id, say)
                     if not contact_success:
                         return False
@@ -638,10 +687,10 @@ class FormFiller:
                         async with page.expect_navigation(timeout=15000) as navigation_info:
                             await next_btn.click()
                         await navigation_info.value
-                        await say("✅ Moved to emergency information page!")
+                        print("✅ Moved to emergency information page!")
                         
                         # FILL EMERGENCY INFORMATION
-                        await say("🆘 Filling emergency information...")
+                        print("🆘 Filling emergency information...")
                         emergency_success = await emergency_info(page, user_data, user_id, say)
                         if not emergency_success:
                             return False
@@ -653,6 +702,14 @@ class FormFiller:
             
         except Exception as e:
             await say(f"❌ Error handling next page: {e}")
+            try:
+                # Take error screenshot
+                timestamp = int(datetime.now().timestamp())
+                filename = f"debug_error_next_page_{timestamp}.png"
+                await page.screenshot(path=filename)
+                await say(f"📸 Saved error screenshot to {filename}")
+            except:
+                pass
             return False
     
     async def find_next_button(self, page):
