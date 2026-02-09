@@ -14,9 +14,7 @@ from supabase import create_client, Client
 load_dotenv(".env.dev")
 
 # ================= Supabase Setup =================
-SUPABASE_URL = "https://zgsdyxdjrietcfvnnpij.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inpnc2R5eGRqcmlldGNmdm5ucGlqIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2MzM5MTUzMywiZXhwIjoyMDc4OTY3NTMzfQ.plczcmX25JAXxJvdGjMlKpuDny2RTZtjsVqOiNJyGBo"
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+
 
 # ================= Slack Bot Setup =================
 app = AsyncApp(
